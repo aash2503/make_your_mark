@@ -27,15 +27,15 @@ SYSTEM_INSTRUCTION = (
 
 
 class GeminiClient:
-    def __init__(self, api_key: str, model: str = "gemini-1.5-flash"):
+    def __init__(self, api_key: str, model: str = "gemini-3.1-flash-lite"):
         if not api_key:
             raise ValueError(
                 "Gemini API key is required. Set GOOGLE_API_KEY in environment or Streamlit secrets."
             )
         genai.configure(api_key=api_key)
         # Normalise legacy model names
-        if model in ("text-bison-1", "text-bison-001", "gemini-pro"):
-            model = "gemini-1.5-flash"
+        if model in ("text-bison-1", "text-bison-001", "gemini-pro", "gemini-1.5-flash", "gemini-2.0-flash-lite"):
+            model = "gemini-3.1-flash-lite"
         self.model_name = model
         self._model = genai.GenerativeModel(
             model_name=self.model_name,

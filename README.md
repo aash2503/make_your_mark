@@ -1,7 +1,7 @@
 # AI Marking Assistant
 
 A Streamlit-based AI grading assistant for Singapore MOE PSLE English.  
-Uses **Google Gemini 1.5** to analyse student submissions and generate strict, rubric-based feedback as LaTeX → PDF reports.
+Uses **Google Gemini 3.1 Flash Lite** to analyse student submissions and generate strict, rubric-based feedback as LaTeX → PDF reports.
 
 ---
 
@@ -50,7 +50,7 @@ streamlit run app.py
 
 ```toml
 google_api_key = "YOUR_GEMINI_API_KEY"
-gemini_model   = "gemini-1.5-flash"
+gemini_model   = "gemini-3.1-flash-lite"
 pin_code       = ""
 ```
 
@@ -81,7 +81,7 @@ These are already configured in `packages.txt`.
 ai_marking_assistant/
 ├── app.py                  # Main Streamlit app (login, dashboard, grading)
 ├── database.py             # SQLite persistence (teachers, classes, students, feedback)
-├── gemini_client.py        # Google Gemini 1.5 API integration
+├── gemini_client.py        # Google Gemini 3.1 Flash Lite API integration
 ├── latex_utils.py          # LaTeX → PDF compilation helpers
 ├── requirements.txt        # Python dependencies
 ├── packages.txt            # Streamlit Cloud system packages
@@ -99,7 +99,7 @@ ai_marking_assistant/
 | Key | Description |
 |-----|-------------|
 | `google_api_key` | Gemini API key from Google AI Studio |
-| `gemini_model` | Model name (default: `gemini-1.5-flash`) |
+| `gemini_model` | Model name (default: `gemini-3.1-flash-lite`) |
 | `pin_code` | Optional legacy PIN for quick access |
 
 ---
