@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+outputs/
+marking_assistant.db
+.env
+.DS_Store
+
+# Never commit real secrets
+.streamlit/secrets.toml

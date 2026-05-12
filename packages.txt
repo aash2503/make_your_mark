@@ -1,0 +1,6 @@
+tesseract-ocr
+texlive-latex-base
+texlive-latex-extra
+texlive-fonts-recommended
+texlive-fonts-extra
+texlive-xetex
