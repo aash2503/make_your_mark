@@ -792,16 +792,45 @@ def main():
     st.sidebar.title("MY-Mark")
     st.sidebar.markdown("## Classes & Assignments")
 
-    with st.sidebar.expander("Create New Class", expanded=True):
+    classes = db.list_classes(teacher_id=teacher_id)
+
+    with st.sidebar.expander("Create New Class", expanded=not bool(classes)):
         new_class_name = st.text_input("Class Name", key="new_class_name")
         if st.button("Add Class", key="add_class") and new_class_name:
-            db.add_class(new_class_name, teacher_id=teacher_id)
-            st.rerun()
+            try:
+                db.add_class(new_class_name, teacher_id=teacher_id)
+                st.rerun()
+            except ValueError as exc:
+                st.error(str(exc))
 
-    classes = db.list_classes(teacher_id=teacher_id)
-    class_options = {c.name: c.id for c in classes}
-    selected_class_name = st.sidebar.selectbox("Select Class", ["Choose a class"] + list(class_options.keys()), key="selected_class")
-    class_id = class_options.get(selected_class_name)
+    if classes:
+        # Show class list with manage options
+        st.sidebar.caption(f"Your classes ({len(classes)})")
+        class_options = {c.name: c.id for c in classes}
+        selected_class_name = st.sidebar.selectbox(
+            "Select Class", ["Choose a class"] + list(class_options.keys()),
+            key="selected_class"
+        )
+        class_id = class_options.get(selected_class_name)
+
+        # Class management: rename / delete
+        if class_id and "class_mgmt_open" not in st.session_state:
+            st.session_state.class_mgmt_open = False
+        if class_id:
+            with st.sidebar.expander(f"Manage: {selected_class_name}"):
+                new_name = st.text_input("Rename class", key="rename_class", value=selected_class_name)
+                if st.button("Rename", key="do_rename") and new_name != selected_class_name:
+                    try:
+                        db.rename_class(class_id, new_name)
+                        st.rerun()
+                    except ValueError as exc:
+                        st.error(str(exc))
+
+                if st.button("🗑 Delete this class", key="delete_class", type="secondary"):
+                    db.delete_class(class_id)
+                    st.rerun()
+    else:
+        class_id = None
 
     if not class_id:
         st.markdown("<div class='main-title'>MY-Mark Dashboard</div>", unsafe_allow_html=True)

@@ -157,12 +157,17 @@ class Database:
     # ── Class methods ─────────────────────────────────────────────────────────
 
     def add_class(self, name: str, teacher_id: int = None) -> int:
-        result = self.client.table("classes").insert({
-            "name": name.strip(),
-            "teacher_id": teacher_id,
-            "created_at": self._now(),
-        }).execute()
-        return result.data[0]["id"]
+        try:
+            result = self.client.table("classes").insert({
+                "name": name.strip(),
+                "teacher_id": teacher_id,
+                "created_at": self._now(),
+            }).execute()
+            return result.data[0]["id"]
+        except Exception as exc:
+            if "duplicate" in str(exc).lower() or "23505" in str(exc):
+                raise ValueError(f"A class named \"{name.strip()}\" already exists in your account.")
+            raise
 
     def list_classes(self, teacher_id: int = None) -> List[ClassRecord]:
         query = self.client.table("classes").select("*").order("name")
@@ -174,6 +179,24 @@ class Database:
     def get_class(self, class_id: int) -> ClassRecord:
         result = self.client.table("classes").select("*").eq("id", class_id).single().execute()
         return ClassRecord(**self._row_to_dict(result.data))
+
+    def rename_class(self, class_id: int, new_name: str):
+        try:
+            self.client.table("classes").update({"name": new_name.strip()}).eq("id", class_id).execute()
+        except Exception as exc:
+            if "duplicate" in str(exc).lower() or "23505" in str(exc):
+                raise ValueError(f"A class named \"{new_name.strip()}\" already exists.")
+            raise
+
+    def delete_class(self, class_id: int):
+        # Delete in order: feedback → submissions → students → assignments → class
+        self.client.table("feedback").delete().filter("assignment_id", "in",
+            f"(SELECT id FROM assignments WHERE class_id = {class_id})").execute()
+        self.client.table("submissions").delete().filter("assignment_id", "in",
+            f"(SELECT id FROM assignments WHERE class_id = {class_id})").execute()
+        self.client.table("assignments").delete().eq("class_id", class_id).execute()
+        self.client.table("students").delete().eq("class_id", class_id).execute()
+        self.client.table("classes").delete().eq("id", class_id).execute()
 
     # ── Student methods ───────────────────────────────────────────────────────
 
