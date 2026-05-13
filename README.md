@@ -43,20 +43,33 @@ streamlit run app.py
 
 ## Deploy to Streamlit Cloud
 
-1. **Push this repo to GitHub** (public or private)
-2. Go to [share.streamlit.io](https://share.streamlit.io) → **New app**
-3. Select your repo, branch `main`, file `app.py`
-4. Click **Advanced settings → Secrets** and paste:
+1. **Push this repo to GitHub** (public or private).
+2. Go to [share.streamlit.io](https://share.streamlit.io) and click **New app**.
+3. Select your repository, branch `main`, and app file `app.py`.
+4. In **Advanced settings → Secrets**, add the following keys:
 
 ```toml
 google_api_key = "YOUR_GEMINI_API_KEY"
 gemini_model   = "gemini-3.1-flash-lite"
+google_oauth_client_id = "YOUR_GOOGLE_OAUTH_CLIENT_ID"
+google_oauth_client_secret = "YOUR_GOOGLE_OAUTH_CLIENT_SECRET"
+google_oauth_redirect_uri = "https://<your-app-name>.streamlit.app"
 pin_code       = ""
 ```
 
-5. Click **Deploy** — Streamlit Cloud will install `requirements.txt` and `packages.txt` automatically.
+5. Click **Deploy**. Streamlit Cloud will install `requirements.txt` and `packages.txt` automatically.
 
-> **Get a Gemini API key:** [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey) — free tier available.
+### What to configure in Google Cloud
+- Create an OAuth consent screen and a Web application OAuth client.
+- Set the redirect URI to your deployed app URL, e.g. `https://<your-app-name>.streamlit.app`.
+- If you want local testing, also add `http://localhost:8501` as an authorized redirect URI.
+
+### Notes
+- PWA support is enabled through `static/manifest.json` and `static/sw.js`.
+- Static assets are served from `/static/`.
+- Google Drive upload requires OAuth with `drive.file` scope.
+
+> **Get a Gemini API key:** [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)
 
 ---
 
@@ -72,6 +85,25 @@ texlive-fonts-recommended
 ```
 
 These are already configured in `packages.txt`.
+
+---
+## Deployment guide
+
+See `DEPLOYMENT.md` for step-by-step Streamlit Cloud deployment and Google OAuth setup.
+
+---
+## Progressive Web App (PWA)
+
+This project includes PWA support via `static/manifest.json` and `static/sw.js`.
+The app injects the web app manifest and registers a service worker on page load.
+
+The PWA asset files are served from `/app/static/`.
+
+**Included files:**
+- `static/manifest.json`
+- `static/sw.js`
+- `static/icon-192.svg`
+- `static/icon-512.svg`
 
 ---
 
@@ -100,6 +132,9 @@ ai_marking_assistant/
 |-----|-------------|
 | `google_api_key` | Gemini API key from Google AI Studio |
 | `gemini_model` | Model name (default: `gemini-3.1-flash-lite`) |
+| `google_oauth_client_id` | Google OAuth client ID |
+| `google_oauth_client_secret` | Google OAuth client secret |
+| `google_oauth_redirect_uri` | Registered OAuth redirect URI |
 | `pin_code` | Optional legacy PIN for quick access |
 
 ---

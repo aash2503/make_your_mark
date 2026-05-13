@@ -5,3 +5,5 @@ Pillow
 pytesseract
 pypdf
 google-generativeai>=0.7.0
+google-auth
+google-auth-oauthlib

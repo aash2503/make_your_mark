@@ -148,6 +148,15 @@ class Database:
         row = cursor.execute("SELECT * FROM teachers WHERE google_sub = ?", (google_sub,)).fetchone()
         return dict(row) if row else None
 
+    def link_google_account(self, teacher_id: int, google_sub: str):
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "UPDATE teachers SET google_sub = ? WHERE id = ?",
+            (google_sub, teacher_id),
+        )
+        self.conn.commit()
+        return self.get_teacher_by_google_sub(google_sub)
+
     def verify_teacher_password(self, email: str, password: str) -> Optional[dict]:
         teacher = self.get_teacher_by_email(email)
         if not teacher:

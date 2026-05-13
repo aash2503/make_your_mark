@@ -1,9 +1,18 @@
 import os
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 import pandas as pd
+import requests
 import streamlit as st
+import streamlit.components.v1 as components
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import Flow
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
 from PIL import Image
 from pypdf import PdfReader
 from pytesseract import image_to_string
@@ -39,244 +48,187 @@ def inject_css() -> None:
     st.markdown(
         f"""
         <style>
-        @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;900&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
-        /* ── Global reset ── */
         html, body, [class*="css"] {{
-            font-family: {FONT_STACK};
+            font-family: 'Inter', sans-serif;
             background-color: {_C['bg']} !important;
             color: {_C['text']} !important;
         }}
         .stApp {{ background-color: {_C['bg']} !important; }}
-
-        /* ── Hide Streamlit chrome ── */
         #MainMenu, footer, header {{ visibility: hidden; }}
 
-        /* ── Main title ── */
         .main-title {{
-            font-size: 2.4rem;
-            font-weight: 900;
-            letter-spacing: 0.04em;
+            font-size: 2.5rem;
+            font-weight: 800;
             color: {_C['text']};
-            margin-bottom: 0.1rem;
-            line-height: 1.1;
+            margin-bottom: 0.25rem;
         }}
-        .main-title .accent-salmon {{ color: {_C['salmon']}; }}
-        .main-title .accent-teal   {{ color: {_C['teal']}; }}
-
         .subheader-text {{
-            font-size: 0.9rem;
+            font-size: 1rem;
             color: {_C['muted']};
-            margin-top: 0;
-            letter-spacing: 0.02em;
+            margin-top: 0.2rem;
+            margin-bottom: 1.2rem;
+            max-width: 720px;
         }}
 
-        /* ── Cards ── */
-        .section-card {{
-            padding: 1.4rem 1.6rem;
-            background: {_C['panel']};
-            border: 2px solid {_C['border']};
-            box-shadow: 5px 5px 0px 0px {_C['salmon']};
+        .section-card, .small-card, .amber-card {{
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 22px;
+            padding: 1.25rem 1.4rem;
+            box-shadow: 0 24px 55px rgba(0, 0, 0, 0.14);
             margin-bottom: 1rem;
         }}
+
         .small-card {{
             padding: 1rem 1.2rem;
-            background: {_C['panel']};
-            border: 2px solid {_C['border']};
-            box-shadow: 3px 3px 0px 0px {_C['teal']};
-            margin-bottom: 0.75rem;
-        }}
-        .amber-card {{
-            padding: 1rem 1.2rem;
-            background: {_C['panel']};
-            border: 2px solid {_C['border']};
-            box-shadow: 3px 3px 0px 0px {_C['amber']};
-            margin-bottom: 0.75rem;
         }}
 
-        /* ── Section labels ── */
         .section-label {{
-            font-size: 0.65rem;
-            font-weight: 900;
-            letter-spacing: 0.25em;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.16em;
             text-transform: uppercase;
             color: {_C['muted']};
-            margin-bottom: 0.5rem;
+            margin-bottom: 0.75rem;
         }}
-        .section-label.salmon {{ color: {_C['salmon']}; border-bottom: 2px solid {_C['salmon']}; padding-bottom: 4px; }}
-        .section-label.teal   {{ color: {_C['teal']};   border-bottom: 2px solid {_C['teal']};   padding-bottom: 4px; }}
-        .section-label.amber  {{ color: {_C['amber']};  border-bottom: 2px solid {_C['amber']};  padding-bottom: 4px; }}
+        .section-label.salmon {{ color: {_C['salmon']}; }}
+        .section-label.teal   {{ color: {_C['teal']}; }}
+        .section-label.amber  {{ color: {_C['amber']}; }}
 
-        /* ── Buttons ── */
         .stButton>button {{
-            font-family: {FONT_STACK};
-            font-weight: 900;
-            font-size: 0.75rem;
-            letter-spacing: 0.15em;
-            text-transform: uppercase;
-            background: {_C['panel']};
-            color: {_C['text']};
-            border: 2px solid {_C['text']};
-            box-shadow: 4px 4px 0px 0px {_C['salmon']};
-            border-radius: 0;
-            height: 46px;
-            transition: all 0.1s ease;
+            font-family: 'Inter', sans-serif;
+            font-weight: 700;
+            font-size: 0.85rem;
+            line-height: 1.1;
+            border-radius: 16px;
+            color: #ffffff;
+            background: linear-gradient(135deg, {_C['teal']}, {_C['salmon']});
+            border: none;
+            min-height: 48px;
+            box-shadow: 0 18px 32px rgba(20,184,166,0.18);
+            transition: transform 0.16s ease, opacity 0.16s ease;
         }}
-        .stButton>button:hover {{
-            background: rgba(250,124,106,0.08);
-            border-color: {_C['salmon']};
-            color: {_C['salmon']};
-        }}
-        .stButton>button:active {{
-            transform: translate(4px, 4px);
-            box-shadow: none !important;
-        }}
+        .stButton>button:hover {{ transform: translateY(-1px); opacity: 0.96; }}
 
-        /* ── Inputs ── */
         .stTextInput>div>div>input,
         .stTextArea>div>div>textarea,
         .stSelectbox>div>div>div {{
-            font-family: {FONT_STACK};
-            background: {_C['input_bg']} !important;
+            background: rgba(255, 255, 255, 0.05) !important;
             color: {_C['text']} !important;
-            border: 2px solid {_C['border']} !important;
-            border-radius: 0 !important;
+            border: 1px solid rgba(255,255,255,0.12) !important;
+            border-radius: 16px !important;
+            padding: 0.9rem !important;
         }}
         .stTextInput>div>div>input:focus,
         .stTextArea>div>div>textarea:focus {{
             border-color: {_C['teal']} !important;
-            box-shadow: 0 0 0 2px rgba(20,184,166,0.15) !important;
-        }}
-        label, .stTextInput label, .stTextArea label, .stSelectbox label {{
-            font-family: {FONT_STACK} !important;
-            font-size: 0.65rem !important;
-            font-weight: 900 !important;
-            letter-spacing: 0.2em !important;
-            text-transform: uppercase !important;
-            color: {_C['muted']} !important;
+            box-shadow: 0 0 0 2px rgba(20,184,166,0.16) !important;
         }}
 
-        /* ── File uploader ── */
         .stFileUploader>div>label {{
-            background: {_C['input_bg']};
-            border: 2px dashed {_C['border']};
-            border-radius: 0;
-            color: {_C['muted']};
+            border-radius: 18px;
+            border: 1px dashed rgba(255,255,255,0.16);
+            background: rgba(255,255,255,0.03);
         }}
 
-        /* ── Sidebar ── */
         [data-testid="stSidebar"] {{
-            background-color: {_C['panel']} !important;
-            border-right: 2px solid {_C['border']};
+            background-color: rgba(255,255,255,0.04) !important;
+            border-right: 1px solid rgba(255,255,255,0.08);
         }}
-        [data-testid="stSidebar"] * {{
-            color: {_C['text']} !important;
-        }}
+        [data-testid="stSidebar"] * {{ color: {_C['text']} !important; }}
 
-        /* ── Expander ── */
         .streamlit-expanderHeader {{
-            font-family: {FONT_STACK} !important;
-            font-weight: 900 !important;
-            font-size: 0.75rem !important;
-            letter-spacing: 0.1em !important;
-            text-transform: uppercase !important;
-            color: {_C['teal']} !important;
-            background: {_C['panel']} !important;
-            border: 1px solid {_C['border']} !important;
+            background: rgba(255,255,255,0.04) !important;
+            border: 1px solid rgba(255,255,255,0.08) !important;
+            border-radius: 16px !important;
         }}
 
-        /* ── Divider stripe ── */
         .auth-stripe {{
-            height: 3px;
-            background: linear-gradient(90deg, {_C['salmon']} 0%, {_C['teal']} 50%, {_C['amber']} 100%);
+            height: 4px;
+            background: linear-gradient(90deg, {_C['teal']} 0%, {_C['salmon']} 50%, {_C['amber']} 100%);
+            border-radius: 99px;
             margin-bottom: 1.5rem;
         }}
 
-        /* ── Login page specific ── */
         .login-wordmark {{
-            font-size: 1.6rem;
-            font-weight: 900;
-            letter-spacing: 0.2em;
-            text-transform: uppercase;
+            font-size: 2rem;
+            font-weight: 800;
+            letter-spacing: 0.04em;
             color: {_C['text']};
-            line-height: 1;
+            line-height: 1.05;
         }}
         .login-wordmark .s {{ color: {_C['salmon']}; }}
         .login-wordmark .t {{ color: {_C['teal']}; }}
         .login-sub {{
-            font-size: 0.65rem;
-            font-weight: 700;
-            letter-spacing: 0.3em;
+            font-size: 0.75rem;
+            letter-spacing: 0.18em;
             text-transform: uppercase;
             color: {_C['muted']};
-            margin-top: 4px;
+            margin-top: 0.75rem;
             margin-bottom: 1.5rem;
         }}
+
         .google-btn {{
-            display: flex;
+            display: inline-flex;
             align-items: center;
             justify-content: center;
             gap: 10px;
             width: 100%;
-            padding: 11px 16px;
+            padding: 12px 18px;
             background: #ffffff;
-            border: 2px solid #dadce0;
-            color: #3c4043;
-            font-family: {FONT_STACK};
-            font-size: 0.75rem;
+            border-radius: 16px;
+            border: 1px solid rgba(0,0,0,0.08);
+            color: #202124;
             font-weight: 700;
-            letter-spacing: 0.05em;
-            cursor: pointer;
-            box-shadow: 3px 3px 0px 0px rgba(66,133,244,0.4);
             text-decoration: none;
-            margin-bottom: 0.5rem;
+            transition: transform 0.16s ease, box-shadow 0.16s ease;
         }}
-        .google-btn:hover {{ background: #f8f9fa; }}
+        .google-btn:hover {{ transform: translateY(-1px); box-shadow: 0 16px 32px rgba(0,0,0,0.08); }}
+
         .auth-divider {{
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 0.75rem;
             margin: 1rem 0;
-            color: #1e3a5f;
-            font-size: 0.65rem;
-            font-weight: 700;
-            letter-spacing: 0.15em;
+            color: {_C['muted']};
+            font-size: 0.8rem;
             text-transform: uppercase;
         }}
         .auth-divider::before, .auth-divider::after {{
             content: '';
             flex: 1;
             height: 1px;
-            background: {_C['border']};
+            background: rgba(255,255,255,0.12);
         }}
-        .status-ok  {{ color: {_C['teal']};   font-size: 0.75rem; font-weight: 700; }}
-        .status-err {{ color: {_C['salmon']}; font-size: 0.75rem; font-weight: 700; }}
 
-        /* ── Avatar chips ── */
-        .avatar-row {{
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-            margin-bottom: 1rem;
-        }}
+        .status-ok {{ color: {_C['teal']}; font-size: 0.85rem; }}
+        .status-err {{ color: {_C['salmon']}; font-size: 0.85rem; }}
+        .avatar-row {{ display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 1rem; }}
         .avatar-chip {{
             width: 44px; height: 44px;
-            background: {_C['input_bg']};
-            border: 2px solid {_C['border']};
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 14px;
             display: flex; align-items: center; justify-content: center;
             font-size: 1.4rem;
             cursor: pointer;
-            transition: all 0.15s;
+            transition: transform 0.16s ease, border-color 0.16s ease;
         }}
         .avatar-chip.selected {{
             border-color: {_C['salmon']};
-            box-shadow: 3px 3px 0px 0px {_C['salmon']};
-            background: rgba(250,124,106,0.08);
+            transform: translateY(-1px);
+            background: rgba(250,124,106,0.15);
         }}
         </style>
         """,
         unsafe_allow_html=True,
     )
+    inject_pwa_meta()
 
 @st.cache_resource
 def get_database() -> Database:
@@ -290,7 +242,200 @@ def get_gemini_client() -> GeminiClient:
     )
 
 
-# ── Google OAuth helper (prototype — swap for real OAuth in production) ────────
+def inject_pwa_meta() -> None:
+    components.html(
+        """
+        <script>
+          const manifestLink = document.createElement('link');
+          manifestLink.rel = 'manifest';
+          manifestLink.href = '/static/manifest.json';
+          document.head.appendChild(manifestLink);
+
+          const themeMeta = document.createElement('meta');
+          themeMeta.name = 'theme-color';
+          themeMeta.content = '#0d1e3a';
+          document.head.appendChild(themeMeta);
+
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/static/sw.js')
+              .then(() => console.log('Service worker registered.'))
+              .catch(err => console.warn('SW registration failed:', err));
+          }
+        </script>
+        """,
+        height=0,
+        width=0,
+        scrolling=False,
+    )
+
+
+GOOGLE_OAUTH_SCOPES = [
+    "openid",
+    "email",
+    "profile",
+    "https://www.googleapis.com/auth/drive.file",
+]
+
+
+def credentials_to_dict(credentials: Credentials) -> dict:
+    return {
+        "token": credentials.token,
+        "refresh_token": credentials.refresh_token,
+        "token_uri": credentials.token_uri,
+        "client_id": credentials.client_id,
+        "client_secret": credentials.client_secret,
+        "scopes": list(credentials.scopes) if credentials.scopes else [],
+    }
+
+
+def load_google_credentials() -> Optional[Credentials]:
+    creds_data = st.session_state.get("google_credentials")
+    if not creds_data:
+        return None
+
+    creds = Credentials(
+        token=creds_data.get("token"),
+        refresh_token=creds_data.get("refresh_token"),
+        token_uri=creds_data.get("token_uri"),
+        client_id=creds_data.get("client_id"),
+        client_secret=creds_data.get("client_secret"),
+        scopes=creds_data.get("scopes"),
+    )
+    if creds.expired and creds.refresh_token:
+        creds.refresh(google_requests.Request())
+        st.session_state.google_credentials = credentials_to_dict(creds)
+    return creds
+
+
+def ensure_drive_folder(service, folder_name: str) -> str:
+    query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+    response = service.files().list(q=query, fields="files(id,name)").execute()
+    files = response.get("files", [])
+    if files:
+        return files[0]["id"]
+
+    metadata = {"name": folder_name, "mimeType": "application/vnd.google-apps.folder"}
+    result = service.files().create(body=metadata, fields="id").execute()
+    return result["id"]
+
+
+def upload_file_to_drive(file_path: Path, mime_type: str, folder_name: Optional[str] = None) -> dict:
+    creds = load_google_credentials()
+    if not creds:
+        raise RuntimeError("Google credentials are not available. Sign in first.")
+
+    service = build("drive", "v3", credentials=creds)
+    parents = []
+    if folder_name:
+        parents.append(ensure_drive_folder(service, folder_name))
+
+    media = MediaFileUpload(str(file_path), mimetype=mime_type, resumable=True)
+    metadata = {"name": file_path.name}
+    if parents:
+        metadata["parents"] = parents
+
+    uploaded = service.files().create(body=metadata, media_body=media, fields="id,webViewLink").execute()
+    return uploaded
+
+
+def get_google_oauth_config():
+    client_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID") or st.secrets.get("google_oauth_client_id")
+    client_secret = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET") or st.secrets.get("google_oauth_client_secret")
+    redirect_uri = os.environ.get("GOOGLE_OAUTH_REDIRECT_URI") or st.secrets.get("google_oauth_redirect_uri")
+    if not all([client_id, client_secret, redirect_uri]):
+        return None
+    return {
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "redirect_uri": redirect_uri,
+    }
+
+
+def build_google_flow(config, state=None):
+    flow = Flow.from_client_config(
+        {
+            "web": {
+                "client_id": config["client_id"],
+                "client_secret": config["client_secret"],
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+            }
+        },
+        scopes=GOOGLE_OAUTH_SCOPES,
+    )
+    flow.redirect_uri = config["redirect_uri"]
+    if state:
+        flow.state = state
+    return flow
+
+
+def get_google_authorization_url():
+    config = get_google_oauth_config()
+    if not config:
+        return None, None
+    flow = build_google_flow(config)
+    auth_url, state = flow.authorization_url(
+        access_type="offline",
+        include_granted_scopes="true",
+        prompt="select_account",
+    )
+    return auth_url, state
+
+
+def handle_google_oauth_callback(db: Database) -> bool:
+    params = st.experimental_get_query_params()
+    if "code" not in params or "state" not in params:
+        return False
+
+    state = params["state"][0]
+    code = params["code"][0]
+    expected_state = st.session_state.get("google_oauth_state")
+    if not expected_state or state != expected_state:
+        st.error("Google OAuth state mismatch. Please try again.")
+        return False
+
+    config = get_google_oauth_config()
+    if not config:
+        st.error("Google OAuth is not configured. Please set google_oauth_client_id, google_oauth_client_secret, and google_oauth_redirect_uri in secrets.")
+        return False
+
+    flow = build_google_flow(config)
+    flow.fetch_token(code=code)
+    credentials = flow.credentials
+
+    try:
+        request = google_requests.Request()
+        id_info = id_token.verify_oauth2_token(credentials.id_token, request, config["client_id"])
+    except Exception as exc:
+        st.error(f"Google token verification failed: {exc}")
+        return False
+
+    email = id_info.get("email")
+    name = id_info.get("name") or email.split("@")[0]
+    google_sub = id_info.get("sub")
+    if not email or not google_sub:
+        st.error("Failed to retrieve a valid Google profile. Please try again.")
+        return False
+
+    st.session_state.google_credentials = credentials_to_dict(credentials)
+
+    teacher = db.get_teacher_by_google_sub(google_sub)
+    if not teacher:
+        teacher = db.get_teacher_by_email(email)
+        if teacher:
+            teacher = db.link_google_account(teacher["id"], google_sub)
+        else:
+            db.create_teacher(email=email, display_name=name, google_sub=google_sub)
+            teacher = db.get_teacher_by_google_sub(google_sub)
+
+    st.session_state.authenticated = True
+    st.session_state.teacher = teacher
+    st.session_state.needs_setup = not bool(teacher.get("setup_complete"))
+    st.experimental_set_query_params()
+    st.rerun()
+    return True
+
+
 def _mock_google_login(db: Database) -> None:
     """Simulate Google OAuth. In production replace with google-auth-oauthlib flow."""
     import random, string
@@ -312,6 +457,8 @@ def _mock_google_login(db: Database) -> None:
 # ── Login / Register page ─────────────────────────────────────────────────────
 def render_login(db: Database) -> None:
     inject_css()
+    if handle_google_oauth_callback(db):
+        return
 
     # Centred narrow column
     _, col, _ = st.columns([1, 1.4, 1])
@@ -331,22 +478,25 @@ def render_login(db: Database) -> None:
         )
 
         # ── Google Sign-In ──
-        st.markdown(
-            """
-            <div class='google-btn' onclick='void(0)'>
-                <svg width="18" height="18" viewBox="0 0 24 24">
-                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-                </svg>
-                Continue with Google
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        if st.button("▶  Sign in with Google", key="google_btn", use_container_width=True):
-            _mock_google_login(db)
+        auth_url, auth_state = get_google_authorization_url()
+        if auth_url:
+            st.markdown(
+                f"<a class='google-btn' href='{auth_url}'>"
+                "<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\">"
+                "<path fill=\"#4285F4\" d=\"M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z\"/>"
+                "<path fill=\"#34A853\" d=\"M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z\"/>"
+                "<path fill=\"#FBBC05\" d=\"M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z\"/>"
+                "<path fill=\"#EA4335\" d=\"M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z\"/>"
+                "</svg>Continue with Google</a>",
+                unsafe_allow_html=True,
+            )
+            if auth_state:
+                st.session_state.google_oauth_state = auth_state
+        else:
+            st.markdown(
+                "<div class='google-btn' style='opacity:0.4; cursor:not-allowed;'>Google Sign-In not configured</div>",
+                unsafe_allow_html=True,
+            )
 
         # Divider
         st.markdown("<div class='auth-divider'>or use email &amp; password</div>", unsafe_allow_html=True)
@@ -574,6 +724,16 @@ def student_upload_area(db: Database, class_id: int, assignment_id: int, student
     with open(pdf_file, "rb") as f:
         st.download_button("Download feedback PDF", f, file_name=pdf_file.name, mime="application/pdf")
 
+    if st.button("Upload feedback PDF to Google Drive"):
+        try:
+            folder_name = f"AI Marking Assistant/{db.get_class(class_id).name}/{assignment.title}"
+            uploaded = upload_file_to_drive(pdf_file, "application/pdf", folder_name=folder_name)
+            st.success("Feedback PDF uploaded to Google Drive.")
+            if uploaded.get("webViewLink"):
+                st.markdown(f"[Open in Drive]({uploaded.get('webViewLink')})")
+        except Exception as exc:
+            st.error(f"Drive upload failed: {exc}")
+
     db.add_feedback(
         student_id=student_id,
         assignment_id=assignment_id,
@@ -636,6 +796,16 @@ def render_class_report(db: Database, class_id: int, assignment_id: int):
         st.success("Class report PDF generated successfully.")
         with open(pdf_file, "rb") as f:
             st.download_button("Download class report PDF", f, file_name=pdf_file.name, mime="application/pdf")
+
+        if st.button("Upload class report to Google Drive"):
+            try:
+                folder_name = f"AI Marking Assistant/{db.get_class(class_id).name}/{assignment.title}"
+                uploaded = upload_file_to_drive(pdf_file, "application/pdf", folder_name=folder_name)
+                st.success("Class report uploaded to Google Drive.")
+                if uploaded.get("webViewLink"):
+                    st.markdown(f"[Open in Drive]({uploaded.get('webViewLink')})")
+            except Exception as exc:
+                st.error(f"Drive upload failed: {exc}")
 
         student_pdf_paths = [row.feedback_pdf_path for row in feedback_rows if row.feedback_pdf_path and Path(row.feedback_pdf_path).exists()]
         if student_pdf_paths:
