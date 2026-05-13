@@ -177,8 +177,10 @@ class Database:
         return [ClassRecord(**self._row_to_dict(r)) for r in (result.data or [])]
 
     def get_class(self, class_id: int) -> ClassRecord:
-        result = self.client.table("classes").select("*").eq("id", class_id).single().execute()
-        return ClassRecord(**self._row_to_dict(result.data))
+        result = self.client.table("classes").select("*").eq("id", class_id).execute()
+        if not result.data:
+            raise ValueError(f"Class {class_id} not found.")
+        return ClassRecord(**self._row_to_dict(result.data[0]))
 
     def rename_class(self, class_id: int, new_name: str):
         try:
