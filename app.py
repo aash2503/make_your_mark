@@ -342,6 +342,8 @@ def get_google_oauth_config():
     client_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID") or st.secrets.get("google_oauth_client_id")
     client_secret = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET") or st.secrets.get("google_oauth_client_secret")
     redirect_uri = os.environ.get("GOOGLE_OAUTH_REDIRECT_URI") or st.secrets.get("google_oauth_redirect_uri")
+    if redirect_uri:
+        redirect_uri = redirect_uri.rstrip("/")
     if not all([client_id, client_secret, redirect_uri]):
         return None
     return {
