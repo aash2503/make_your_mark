@@ -391,6 +391,7 @@ def get_google_authorization_url():
     config = get_google_oauth_config()
     if not config:
         return None, None
+    st.session_state._oauth_processed = False
     flow = build_google_flow(config)
     auth_url, state = flow.authorization_url(
         access_type="offline",
@@ -401,6 +402,10 @@ def get_google_authorization_url():
 
 
 def handle_google_oauth_callback(db: Database) -> bool:
+    # Prevent double-processing the same auth code (can happen on Streamlit rerun)
+    if st.session_state.get("_oauth_processed"):
+        return False
+
     params = get_query_params()
     if params is None:
         st.error(
@@ -471,6 +476,7 @@ def handle_google_oauth_callback(db: Database) -> bool:
     st.session_state.authenticated = True
     st.session_state.teacher = teacher
     st.session_state.needs_setup = not bool(teacher.get("setup_complete"))
+    st.session_state._oauth_processed = True
     set_query_params()
     st.rerun()
     return True
