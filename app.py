@@ -374,7 +374,7 @@ def get_query_params():
         return st.experimental_get_query_params()
     if hasattr(st, "get_query_params"):
         return st.get_query_params()
-    raise RuntimeError("Streamlit version does not support query parameter retrieval.")
+    return None
 
 
 def set_query_params(params=None):
@@ -382,7 +382,7 @@ def set_query_params(params=None):
         return st.experimental_set_query_params(**(params or {}))
     if hasattr(st, "set_query_params"):
         return st.set_query_params(**(params or {}))
-    raise RuntimeError("Streamlit version does not support query parameter setting.")
+    return None
 
 
 def get_google_authorization_url():
@@ -400,6 +400,12 @@ def get_google_authorization_url():
 
 def handle_google_oauth_callback(db: Database) -> bool:
     params = get_query_params()
+    if params is None:
+        st.error(
+            "Google OAuth callback requires Streamlit 1.50.0 or newer. "
+            "Please pin `streamlit==1.50.0` in `requirements.txt` and redeploy."
+        )
+        return False
     if "code" not in params or "state" not in params:
         return False
 
