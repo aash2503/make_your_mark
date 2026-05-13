@@ -17,7 +17,7 @@ BASE_DIR = Path(__file__).parent
 OUTPUT_DIR = BASE_DIR / "outputs"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
-st.set_page_config(page_title="AI Marking Assistant", layout="wide")
+st.set_page_config(page_title="MY-Mark", layout="wide")
 
 
 # ── Colour tokens ─────────────────────────────────────────────────────────────
@@ -29,7 +29,9 @@ _C = {
     "muted":    "#4a7aaa",   # secondary / muted text
     "salmon":   "#fa7c6a",   # salmon accent
     "teal":     "#14b8a6",   # teal accent
-    "amber":    "#f59e0b",   # amber accent
+    "amber":    "#f59e0b",   # amber accent — now primary
+    "gold":     "#fbbf24",   # lighter gold for highlights
+    "amber-bg": "rgba(245,158,11,0.12)",  # amber tint
     "input_bg": "#060e1a",   # input field background
 }
 
@@ -63,7 +65,7 @@ def inject_css() -> None:
 
         .section-card, .small-card, .amber-card {{
             background: rgba(255,255,255,0.03);
-            border: 1px solid rgba(255,255,255,0.08);
+            border: 1px solid rgba(245,158,11,0.15);
             border-radius: 22px;
             padding: 1.25rem 1.4rem;
             box-shadow: 0 24px 55px rgba(0, 0, 0, 0.14);
@@ -96,13 +98,13 @@ def inject_css() -> None:
             line-height: 1.1;
             border-radius: 16px;
             color: #ffffff;
-            background: linear-gradient(135deg, {_C['teal']}, {_C['salmon']});
+            background: linear-gradient(135deg, {_C['teal']}, {_C['amber']});
             border: none;
             min-height: 48px;
-            box-shadow: 0 18px 32px rgba(20,184,166,0.18);
+            box-shadow: 0 18px 32px rgba(245,158,11,0.22);
             transition: transform 0.16s ease, opacity 0.16s ease;
         }}
-        .stButton>button:hover {{ transform: translateY(-1px); opacity: 0.96; }}
+        .stButton>button:hover {{ transform: translateY(-1px); opacity: 0.96; box-shadow: 0 22px 38px rgba(245,158,11,0.32); }}
 
         .stTextInput>div>div>input,
         .stTextArea>div>div>textarea,
@@ -115,8 +117,8 @@ def inject_css() -> None:
         }}
         .stTextInput>div>div>input:focus,
         .stTextArea>div>div>textarea:focus {{
-            border-color: {_C['teal']} !important;
-            box-shadow: 0 0 0 2px rgba(20,184,166,0.16) !important;
+            border-color: {_C['amber']} !important;
+            box-shadow: 0 0 0 2px rgba(245,158,11,0.22) !important;
         }}
 
         .stFileUploader>div>label {{
@@ -127,9 +129,19 @@ def inject_css() -> None:
 
         [data-testid="stSidebar"] {{
             background-color: rgba(255,255,255,0.04) !important;
-            border-right: 1px solid rgba(255,255,255,0.08);
+            border-right: 1px solid rgba(245,158,11,0.12);
         }}
-        [data-testid="stSidebar"] * {{ color: {_C['text']} !important; }}
+        [data-testid=\"stSidebar\"] * {{ color: {_C['text']} !important; }}
+
+        /* Mobile-friendly scaling */
+        @media (max-width: 768px) {{
+            .main-title {{ font-size: 1.6rem !important; }}
+            .login-wordmark {{ font-size: 1.5rem !important; }}
+            .section-card, .small-card {{ padding: 0.9rem 1rem !important; }}
+            .stButton>button {{ min-height: 44px !important; font-size: 0.8rem !important; }}
+            .stTextInput>div>div>input,
+            .stTextArea>div>div>textarea {{ padding: 0.7rem !important; font-size: 16px !important; }}
+        }}
 
         .streamlit-expanderHeader {{
             background: rgba(255,255,255,0.04) !important;
@@ -155,11 +167,12 @@ def inject_css() -> None:
         .login-wordmark .t {{ color: {_C['teal']}; }}
         .login-sub {{
             font-size: 0.75rem;
-            letter-spacing: 0.18em;
+            letter-spacing: 0.12em;
             text-transform: uppercase;
-            color: {_C['muted']};
+            color: {_C['amber']};
             margin-top: 0.75rem;
             margin-bottom: 1.5rem;
+            line-height: 1.5;
         }}
 
         .auth-divider {{
@@ -227,8 +240,29 @@ def inject_pwa_meta() -> None:
 
           const themeMeta = document.createElement('meta');
           themeMeta.name = 'theme-color';
-          themeMeta.content = '#0d1e3a';
+          themeMeta.content = '#071020';
           document.head.appendChild(themeMeta);
+
+          // iOS full-screen / standalone mode
+          const appleMeta = document.createElement('meta');
+          appleMeta.name = 'apple-mobile-web-app-capable';
+          appleMeta.content = 'yes';
+          document.head.appendChild(appleMeta);
+
+          const appleStatus = document.createElement('meta');
+          appleStatus.name = 'apple-mobile-web-app-status-bar-style';
+          appleStatus.content = 'black-translucent';
+          document.head.appendChild(appleStatus);
+
+          const appleTitle = document.createElement('meta');
+          appleTitle.name = 'apple-mobile-web-app-title';
+          appleTitle.content = 'MY-Mark';
+          document.head.appendChild(appleTitle);
+
+          const viewportMeta = document.createElement('meta');
+          viewportMeta.name = 'viewport';
+          viewportMeta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover';
+          document.head.appendChild(viewportMeta);
 
           if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/static/sw.js')
@@ -256,10 +290,10 @@ def render_login(db: Database) -> None:
         # Wordmark
         st.markdown(
             "<div class='login-wordmark'>"
-            "<span class='s'>AI</span> <span class='t'>Marking</span> Assistant"
+            "<span class='s'>MY</span><span class='t'>-Mark</span>"
             "</div>"
             "<div class='login-sub'>"
-            "&#x1F4DA;&nbsp; Teacher Portal &nbsp;·&nbsp; Your Data, Any Device"
+            "Make Your Mark with MY-Mark &nbsp;—&nbsp; AI-Supported, Semi-Automated Marking"
             "</div>",
             unsafe_allow_html=True,
         )
@@ -322,24 +356,27 @@ def render_login(db: Database) -> None:
         with tab_reg:
             reg_name = st.text_input("Your Name", key="reg_name", placeholder="Ms. Chen")
             reg_email = st.text_input("Email", key="reg_email", placeholder="teacher@school.edu")
-            reg_pw = st.text_input("Password", key="reg_pw", placeholder="Min. 6 characters", type="password")
+            reg_pw = st.text_input("Password", key="reg_pw", placeholder="Min. 8 characters", type="password")
             reg_pw2 = st.text_input("Confirm Password", key="reg_pw2", placeholder="Repeat password", type="password")
 
             if st.button("Create Account →", key="reg_submit", use_container_width=True):
+                import re
                 err = None
-                if not all([reg_name, reg_email, reg_pw, reg_pw2]):
+                if not all([reg_name.strip(), reg_email.strip(), reg_pw, reg_pw2]):
                     err = "Please fill in all fields."
-                elif len(reg_pw) < 6:
-                    err = "Password must be at least 6 characters."
+                elif not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", reg_email.strip()):
+                    err = "Please enter a valid email address (e.g. teacher@school.edu)."
+                elif len(reg_pw) < 8:
+                    err = "Password must be at least 8 characters."
                 elif reg_pw != reg_pw2:
                     err = "Passwords do not match."
                 elif db.get_teacher_by_email(reg_email):
-                    err = "An account with that email already exists."
+                    err = "An account with that email already exists. Sign in instead."
 
                 if err:
                     st.markdown(f"<p class='status-err'>{err}</p>", unsafe_allow_html=True)
                 else:
-                    teacher_id = db.create_teacher(email=reg_email, display_name=reg_name, password=reg_pw)
+                    db.create_teacher(email=reg_email, display_name=reg_name, password=reg_pw)
                     teacher = db.get_teacher_by_email(reg_email)
                     st.session_state.authenticated = True
                     st.session_state.teacher = teacher
@@ -752,7 +789,7 @@ def main():
     if gemini.last_model_used:
         st.sidebar.caption(f"🧠 Model: `{gemini.last_model_used}`")
 
-    st.sidebar.title("Navigation")
+    st.sidebar.title("MY-Mark")
     st.sidebar.markdown("## Classes & Assignments")
 
     with st.sidebar.expander("Create New Class", expanded=True):
@@ -767,8 +804,8 @@ def main():
     class_id = class_options.get(selected_class_name)
 
     if not class_id:
-        st.markdown("<div class='main-title'>Welcome to the AI Marking Assistant</div>", unsafe_allow_html=True)
-        st.markdown("<p class='subheader-text'>Start by creating or selecting a class from the sidebar.</p>", unsafe_allow_html=True)
+        st.markdown("<div class='main-title'>MY-Mark Dashboard</div>", unsafe_allow_html=True)
+        st.markdown("<p class='subheader-text'>Create or select a class from the sidebar to begin marking.</p>", unsafe_allow_html=True)
         return
 
     selected_class = db.get_class(class_id)
@@ -863,7 +900,7 @@ def main():
     selected_student_name = st.sidebar.selectbox("Select Student", ["Choose a student"] + list(student_options.keys()), key="selected_student")
     student_id = student_options.get(selected_student_name)
 
-    st.markdown("<div class='main-title'>Teacher Dashboard</div>", unsafe_allow_html=True)
+    st.markdown("<div class='main-title'>MY-Mark Dashboard</div>", unsafe_allow_html=True)
     st.markdown("<p class='subheader-text'>Select an assignment and student to grade work, review past feedback, and produce PDF reports.</p>", unsafe_allow_html=True)
 
     left, right = st.columns([2, 1])

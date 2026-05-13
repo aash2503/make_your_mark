@@ -1,12 +1,13 @@
 {
-  "name": "Make Your Mark",
-  "short_name": "MakeYourMark",
-  "description": "AI-powered PSLE English marking assistant for teachers",
+  "name": "MY-Mark — Make Your Mark",
+  "short_name": "MY-Mark",
+  "description": "AI-Supported, Semi-Automated Marking for teachers",
   "start_url": "/",
   "display": "standalone",
-  "orientation": "portrait-primary",
+  "display_override": ["standalone", "fullscreen"],
+  "orientation": "any",
   "background_color": "#071020",
-  "theme_color": "#0d1e3a",
+  "theme_color": "#071020",
   "categories": ["education", "productivity"],
   "icons": [
     {
@@ -20,15 +21,6 @@
       "sizes": "512x512",
       "type": "image/svg+xml",
       "purpose": "any maskable"
-    }
-  ],
-  "screenshots": [],
-  "shortcuts": [
-    {
-      "name": "Dashboard",
-      "short_name": "Dashboard",
-      "description": "Open the teacher dashboard",
-      "url": "/"
     }
   ]
 }

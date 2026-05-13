@@ -1,4 +1,4 @@
-// Make Your Mark — Service Worker
+// MY-Mark — Service Worker
 // Provides offline caching and PWA install support
 
 const CACHE_NAME = 'make-your-mark-v1';
