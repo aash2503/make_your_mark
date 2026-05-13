@@ -60,8 +60,11 @@ class Database:
             """
             CREATE TABLE IF NOT EXISTS classes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL UNIQUE,
-                created_at TEXT NOT NULL
+                name TEXT NOT NULL,
+                teacher_id INTEGER,
+                created_at TEXT NOT NULL,
+                UNIQUE(name, teacher_id),
+                FOREIGN KEY(teacher_id) REFERENCES teachers(id)
             );
             """
         )
@@ -127,6 +130,25 @@ class Database:
             cursor.execute("ALTER TABLE classes ADD COLUMN teacher_id INTEGER REFERENCES teachers(id)")
         except sqlite3.OperationalError:
             pass  # column already exists
+
+        # Migration: rebuild classes to use UNIQUE(name, teacher_id) instead of UNIQUE(name)
+        cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='classes'")
+        table_sql = cursor.fetchone()["sql"]
+        if "UNIQUE(name, teacher_id)" not in table_sql and "teacher_id" in table_sql:
+            cursor.execute("""
+                CREATE TABLE classes_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    teacher_id INTEGER,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(name, teacher_id),
+                    FOREIGN KEY(teacher_id) REFERENCES teachers(id)
+                )
+            """)
+            cursor.execute("INSERT INTO classes_new (id, name, teacher_id, created_at) SELECT id, name, teacher_id, created_at FROM classes")
+            cursor.execute("DROP TABLE classes")
+            cursor.execute("ALTER TABLE classes_new RENAME TO classes")
+
         self.conn.commit()
 
     # ── Teacher account methods ───────────────────────────────────────────────
@@ -140,16 +162,21 @@ class Database:
         import random, string
         return "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
-    def create_teacher(self, email: str, display_name: str, password: str = None, google_sub: str = None) -> int:
+    def create_teacher(self, email: str, display_name: str, password: str = None) -> int:
         cursor = self.conn.cursor()
         pw_hash = self._hash_password(password) if password else None
-        code = self._generate_teacher_code()
-        cursor.execute(
-            "INSERT INTO teachers (email, display_name, password_hash, teacher_code, google_sub, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (email.strip().lower(), display_name.strip(), pw_hash, code, google_sub, datetime.utcnow().isoformat()),
-        )
-        self.conn.commit()
-        return cursor.lastrowid
+        for _ in range(5):
+            code = self._generate_teacher_code()
+            try:
+                cursor.execute(
+                    "INSERT INTO teachers (email, display_name, password_hash, teacher_code, created_at) VALUES (?, ?, ?, ?, ?)",
+                    (email.strip().lower(), display_name.strip(), pw_hash, code, datetime.utcnow().isoformat()),
+                )
+                self.conn.commit()
+                return cursor.lastrowid
+            except sqlite3.IntegrityError:
+                continue  # code collision, try again
+        raise RuntimeError("Failed to generate a unique teacher code after 5 attempts.")
 
     def get_teacher_by_code(self, code: str):
         cursor = self.conn.cursor()
@@ -160,20 +187,6 @@ class Database:
         cursor = self.conn.cursor()
         row = cursor.execute("SELECT * FROM teachers WHERE email = ?", (email.strip().lower(),)).fetchone()
         return dict(row) if row else None
-
-    def get_teacher_by_google_sub(self, google_sub: str):
-        cursor = self.conn.cursor()
-        row = cursor.execute("SELECT * FROM teachers WHERE google_sub = ?", (google_sub,)).fetchone()
-        return dict(row) if row else None
-
-    def link_google_account(self, teacher_id: int, google_sub: str):
-        cursor = self.conn.cursor()
-        cursor.execute(
-            "UPDATE teachers SET google_sub = ? WHERE id = ?",
-            (google_sub, teacher_id),
-        )
-        self.conn.commit()
-        return self.get_teacher_by_google_sub(google_sub)
 
     def verify_teacher_password(self, email: str, password: str) -> Optional[dict]:
         teacher = self.get_teacher_by_email(email)

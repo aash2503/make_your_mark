@@ -33,9 +33,6 @@ _C = {
     "input_bg": "#060e1a",   # input field background
 }
 
-FONT_STACK = "'Century Gothic', CenturyGothic, AppleGothic, 'Trebuchet MS', sans-serif"
-
-
 def inject_css() -> None:
     st.markdown(
         f"""
@@ -164,23 +161,6 @@ def inject_css() -> None:
             margin-top: 0.75rem;
             margin-bottom: 1.5rem;
         }}
-
-        .google-btn {{
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
-            width: 100%;
-            padding: 12px 18px;
-            background: #ffffff;
-            border-radius: 16px;
-            border: 1px solid rgba(0,0,0,0.08);
-            color: #202124;
-            font-weight: 700;
-            text-decoration: none;
-            transition: transform 0.16s ease, box-shadow 0.16s ease;
-        }}
-        .google-btn:hover {{ transform: translateY(-1px); box-shadow: 0 16px 32px rgba(0,0,0,0.08); }}
 
         .auth-divider {{
             display: flex;
@@ -361,12 +341,7 @@ def render_login(db: Database) -> None:
                     st.session_state.authenticated = True
                     st.session_state.teacher = teacher
                     st.session_state.needs_setup = True
-                    st.markdown(
-                        f"<p class='status-ok'>✓ Account created! "
-                        f"Your teacher code is: <strong>{teacher['teacher_code']}</strong> "
-                        f"— save this to log in from any device.</p>",
-                        unsafe_allow_html=True,
-                    )
+                    st.session_state.new_teacher_code = teacher["teacher_code"]
                     st.rerun()
 
 
@@ -374,6 +349,14 @@ def render_login(db: Database) -> None:
 def render_account_setup(db: Database) -> None:
     inject_css()
     teacher = st.session_state.get("teacher", {})
+
+    # Show new teacher code prominently (from registration)
+    new_code = st.session_state.pop("new_teacher_code", None)
+    if new_code:
+        st.info(
+            f"✅ Account created! Your teacher code is: **{new_code}**  \n"
+            f"Save this — use it to log in from any device."
+        )
 
     _, col, _ = st.columns([1, 1.6, 1])
     with col:
@@ -454,8 +437,12 @@ def render_account_setup(db: Database) -> None:
 
 def extract_submission_text(uploaded_file) -> str:
     if uploaded_file.type.startswith("image/"):
-        image = Image.open(uploaded_file)
-        return image_to_string(image, lang="eng")
+        try:
+            image = Image.open(uploaded_file)
+            return image_to_string(image, lang="eng")
+        except Exception:
+            st.error("OCR is not available. The server may be missing Tesseract. Please paste text directly instead.")
+            return ""
 
     if uploaded_file.type == "text/plain":
         return uploaded_file.read().decode("utf-8")
@@ -518,8 +505,12 @@ def student_upload_area(db: Database, class_id: int, assignment_id: int, student
 
     try:
         pdf_file = compile_latex(tex_file, OUTPUT_DIR)
-    except Exception as exc:
-        st.error(f"LaTeX compilation failed: {exc}")
+    except (RuntimeError, FileNotFoundError) as exc:
+        msg = str(exc)
+        if "not found" in msg.lower() or "pdflatex" in msg.lower():
+            st.error("LaTeX compiler (pdflatex) is not installed on this server. PDF generation is unavailable. You can copy the LaTeX source above and compile it locally.")
+        else:
+            st.error(f"LaTeX compilation failed: {exc}")
         return
 
     st.success("PDF generated successfully.")
@@ -581,8 +572,12 @@ def render_class_report(db: Database, class_id: int, assignment_id: int):
         write_tex_file(report_file, report_tex)
         try:
             pdf_file = compile_latex(report_file, OUTPUT_DIR)
-        except Exception as exc:
-            st.error(f"LaTeX compilation failed: {exc}")
+        except (RuntimeError, FileNotFoundError) as exc:
+            msg = str(exc)
+            if "not found" in msg.lower() or "pdflatex" in msg.lower():
+                st.error("LaTeX compiler (pdflatex) is not installed on this server. PDF generation is unavailable.")
+            else:
+                st.error(f"LaTeX compilation failed: {exc}")
             return
 
         st.success("Class report PDF generated successfully.")
@@ -628,7 +623,7 @@ def main():
         unsafe_allow_html=True,
     )
     if st.sidebar.button("Sign Out", key="signout"):
-        for k in ["authenticated", "teacher", "needs_setup"]:
+        for k in ["authenticated", "teacher", "needs_setup", "setup_avatar", "new_teacher_code"]:
             st.session_state.pop(k, None)
         st.rerun()
 
