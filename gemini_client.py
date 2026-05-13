@@ -113,6 +113,29 @@ class GeminiClient:
         """Return the primary (first-choice) model name."""
         return self.models[0] if self.models else "unknown"
 
+    def extract_text_from_image(self, image_bytes: bytes, mime_type: str = "image/png") -> str:
+        """OCR fallback: use Gemini Vision to extract text from an image."""
+        prompt = "Extract all text from this image verbatim. Return ONLY the extracted text, no commentary."
+        for model_name in self.models:
+            if model_name in self._cooldown:
+                if time.time() < self._cooldown[model_name]:
+                    continue
+                del self._cooldown[model_name]
+            try:
+                model = self._get_model(model_name)
+                response = model.generate_content([
+                    {"mime_type": mime_type, "data": image_bytes},
+                    prompt,
+                ])
+                self.last_model_used = model_name
+                return response.text.strip()
+            except Exception as exc:
+                if _is_fallback_error(exc):
+                    self._cooldown[model_name] = time.time() + self._cooldown_seconds
+                    continue
+                raise
+        raise RuntimeError("All Gemini models exhausted for OCR.")
+
     def generate_student_feedback(
         self,
         student_name: str,

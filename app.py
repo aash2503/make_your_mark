@@ -11,7 +11,7 @@ from pytesseract import image_to_string
 
 from database import Assignment, Database, Feedback, Student
 from gemini_client import GeminiClient
-from latex_utils import compile_latex, merge_pdfs, write_tex_file
+from latex_utils import compile_latex, compile_latex_online, merge_pdfs, write_tex_file
 
 BASE_DIR = Path(__file__).parent
 OUTPUT_DIR = BASE_DIR / "outputs"
@@ -438,14 +438,60 @@ def render_account_setup(db: Database) -> None:
                 st.rerun()
 
 
+def _compile_with_fallback(tex_path: Path, output_dir: Path) -> Path | None:
+    """Try pdflatex first, fall back to online API. Returns PDF path or None."""
+    # Try local pdflatex
+    try:
+        return compile_latex(tex_path, output_dir)
+    except (RuntimeError, FileNotFoundError) as exc:
+        msg = str(exc)
+        is_missing = "not found" in msg.lower() or "pdflatex" in msg.lower()
+        if not is_missing:
+            st.warning(f"Local LaTeX failed: {exc}. Trying online compiler...")
+        else:
+            st.info("pdflatex not installed — using online LaTeX compiler...")
+
+    # Fallback: online API
+    try:
+        return compile_latex_online(tex_path, output_dir)
+    except Exception as exc:
+        st.error(
+            f"LaTeX compilation failed both locally and online.\n\n"
+            f"**Online error:** {exc}\n\n"
+            f"You can copy the LaTeX source below and compile it at "
+            f"[Overleaf](https://overleaf.com) or with a local TeX install."
+        )
+        return None
+
+
 def extract_submission_text(uploaded_file) -> str:
     if uploaded_file.type.startswith("image/"):
+        # Try tesseract first
         try:
             image = Image.open(uploaded_file)
-            return image_to_string(image, lang="eng")
+            text = image_to_string(image, lang="eng")
+            if text.strip():
+                return text.strip()
         except Exception:
-            st.error("OCR is not available. The server may be missing Tesseract. Please paste text directly instead.")
+            pass
+
+        # Fallback: Gemini Vision OCR
+        try:
+            uploaded_file.seek(0)
+            image_bytes = uploaded_file.read()
+            mime = uploaded_file.type or "image/png"
+            gemini = get_gemini_client()
+            with st.spinner("Tesseract unavailable — using Gemini Vision for OCR..."):
+                text = gemini.extract_text_from_image(image_bytes, mime)
+            if text.strip():
+                st.caption("📷 Text extracted via Gemini Vision")
+                return text.strip()
+        except Exception:
+            st.error("OCR failed — both Tesseract and Gemini Vision are unavailable. Please paste text directly.")
             return ""
+
+        st.error("No text could be extracted from the image. Please paste text directly.")
+        return ""
 
     if uploaded_file.type == "text/plain":
         return uploaded_file.read().decode("utf-8")
@@ -506,14 +552,8 @@ def student_upload_area(db: Database, class_id: int, assignment_id: int, student
     tex_file = OUTPUT_DIR / f"feedback_{student_id}_{assignment_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}.tex"
     write_tex_file(tex_file, latex_result)
 
-    try:
-        pdf_file = compile_latex(tex_file, OUTPUT_DIR)
-    except (RuntimeError, FileNotFoundError) as exc:
-        msg = str(exc)
-        if "not found" in msg.lower() or "pdflatex" in msg.lower():
-            st.error("LaTeX compiler (pdflatex) is not installed on this server. PDF generation is unavailable. You can copy the LaTeX source above and compile it locally.")
-        else:
-            st.error(f"LaTeX compilation failed: {exc}")
+    pdf_file = _compile_with_fallback(tex_file, OUTPUT_DIR)
+    if pdf_file is None:
         return
 
     st.success("PDF generated successfully.")
@@ -581,14 +621,8 @@ def render_class_report(db: Database, class_id: int, assignment_id: int):
 
         report_file = OUTPUT_DIR / f"class_report_{class_id}_{assignment_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}.tex"
         write_tex_file(report_file, report_tex)
-        try:
-            pdf_file = compile_latex(report_file, OUTPUT_DIR)
-        except (RuntimeError, FileNotFoundError) as exc:
-            msg = str(exc)
-            if "not found" in msg.lower() or "pdflatex" in msg.lower():
-                st.error("LaTeX compiler (pdflatex) is not installed on this server. PDF generation is unavailable.")
-            else:
-                st.error(f"LaTeX compilation failed: {exc}")
+        pdf_file = _compile_with_fallback(report_file, OUTPUT_DIR)
+        if pdf_file is None:
             return
 
         st.success("Class report PDF generated successfully.")

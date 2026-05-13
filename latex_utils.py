@@ -2,6 +2,7 @@ import subprocess
 from pathlib import Path
 from typing import List
 
+import requests
 from pypdf import PdfReader, PdfWriter
 
 BASE_LATEX_HEADER = r"""
@@ -51,6 +52,31 @@ def compile_latex(tex_path: Path, output_dir: Path) -> Path:
     pdf_path = output_dir / tex_path.with_suffix(".pdf").name
     if not pdf_path.exists():
         raise RuntimeError("LaTeX compilation completed but the PDF file was not generated.")
+    return pdf_path
+
+
+def compile_latex_online(tex_path: Path, output_dir: Path) -> Path:
+    """Fallback: compile LaTeX via a free online API when pdflatex is unavailable."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    pdf_path = output_dir / tex_path.with_suffix(".pdf").name
+
+    with open(tex_path, "rb") as f:
+        response = requests.post(
+            "https://latexonline.cc/compile",
+            files={"file": (tex_path.name, f, "application/x-tex")},
+            timeout=60,
+        )
+
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"Online LaTeX compilation failed (HTTP {response.status_code}). "
+            f"Response: {response.text[:500]}"
+        )
+
+    pdf_path.write_bytes(response.content)
+    if not pdf_path.exists() or pdf_path.stat().st_size < 100:
+        raise RuntimeError("Online LaTeX compilation returned an empty or invalid PDF.")
+
     return pdf_path
 
 
