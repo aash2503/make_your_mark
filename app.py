@@ -412,16 +412,21 @@ def handle_google_oauth_callback(db: Database) -> bool:
     state = params["state"][0]
     code = params["code"][0]
     expected_state = st.session_state.get("google_oauth_state")
-    if not expected_state or state != expected_state:
+    if expected_state and state != expected_state:
         st.error("Google OAuth state mismatch. Please try again.")
         return False
+    if expected_state is None:
+        st.warning(
+            "OAuth session state was not available after redirect. "
+            "Continuing anyway to complete login."
+        )
 
     config = get_google_oauth_config()
     if not config:
         st.error("Google OAuth is not configured. Please set google_oauth_client_id, google_oauth_client_secret, and google_oauth_redirect_uri in secrets.")
         return False
 
-    flow = build_google_flow(config)
+    flow = build_google_flow(config, state=state)
     flow.fetch_token(code=code)
     credentials = flow.credentials
 
