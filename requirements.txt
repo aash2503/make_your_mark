@@ -4,3 +4,4 @@ Pillow
 pytesseract
 pypdf
 google-generativeai>=0.7.0
+supabase>=2.0.0

@@ -204,7 +204,10 @@ def inject_css() -> None:
 
 @st.cache_resource
 def get_database() -> Database:
-    return Database(BASE_DIR / "marking_assistant.db")
+    return Database(
+        url=os.environ.get("SUPABASE_URL") or st.secrets.get("SUPABASE_URL", ""),
+        key=os.environ.get("SUPABASE_KEY") or st.secrets.get("SUPABASE_KEY", ""),
+    )
 
 @st.cache_resource
 def get_gemini_client() -> GeminiClient:
@@ -517,6 +520,14 @@ def student_upload_area(db: Database, class_id: int, assignment_id: int, student
     with open(pdf_file, "rb") as f:
         st.download_button("Download feedback PDF", f, file_name=pdf_file.name, mime="application/pdf")
 
+    # Upload PDF to Supabase Storage for cross-device access
+    pdf_url = None
+    try:
+        pdf_url = db.upload_pdf(pdf_file)
+        st.caption(f"☁️ PDF saved to cloud: [Open]({pdf_url})")
+    except Exception:
+        st.caption("⚠️ Could not upload PDF to cloud storage — local download still works.")
+
     db.add_feedback(
         student_id=student_id,
         assignment_id=assignment_id,
@@ -527,7 +538,7 @@ def student_upload_area(db: Database, class_id: int, assignment_id: int, student
             "student_text": submission_text[:1000],
             "history": previous_feedback,
         },
-        feedback_pdf_path=str(pdf_file),
+        feedback_pdf_path=pdf_url or str(pdf_file),
     )
 
 
@@ -584,7 +595,20 @@ def render_class_report(db: Database, class_id: int, assignment_id: int):
         with open(pdf_file, "rb") as f:
             st.download_button("Download class report PDF", f, file_name=pdf_file.name, mime="application/pdf")
 
-        student_pdf_paths = [row.feedback_pdf_path for row in feedback_rows if row.feedback_pdf_path and Path(row.feedback_pdf_path).exists()]
+        # Upload to cloud for cross-device access
+        try:
+            report_url = db.upload_pdf(pdf_file)
+            st.caption(f"☁️ Report saved to cloud: [Open]({report_url})")
+        except Exception:
+            st.caption("⚠️ Could not upload report to cloud storage.")
+
+        # Merge local PDFs (skips cloud URLs — download individual PDFs instead)
+        student_pdf_paths = [
+            row.feedback_pdf_path for row in feedback_rows
+            if row.feedback_pdf_path
+            and not str(row.feedback_pdf_path).startswith("http")
+            and Path(row.feedback_pdf_path).exists()
+        ]
         if student_pdf_paths:
             merged_path = OUTPUT_DIR / f"merged_{class_id}_{assignment_id}.pdf"
             merge_pdfs(student_pdf_paths, merged_path)
