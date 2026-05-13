@@ -370,18 +370,18 @@ def build_google_flow(config, state=None):
 
 
 def get_query_params():
+    if hasattr(st, "query_params"):
+        return st.query_params
     if hasattr(st, "experimental_get_query_params"):
         return st.experimental_get_query_params()
-    if hasattr(st, "get_query_params"):
-        return st.get_query_params()
     return None
 
 
 def set_query_params(params=None):
-    if hasattr(st, "experimental_set_query_params"):
-        return st.experimental_set_query_params(**(params or {}))
     if hasattr(st, "set_query_params"):
         return st.set_query_params(**(params or {}))
+    if hasattr(st, "experimental_set_query_params"):
+        return st.experimental_set_query_params(**(params or {}))
     return None
 
 
