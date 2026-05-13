@@ -222,23 +222,37 @@ class Database:
 
     def add_assignment(self, class_id: int, title: str, context: str, answer_key: str,
                         answer_key_source: str = "manual") -> int:
-        result = self.client.table("assignments").insert({
-            "class_id": class_id,
-            "title": title.strip(),
-            "context": context.strip(),
-            "answer_key": answer_key.strip(),
-            "answer_key_source": answer_key_source,
-            "created_at": self._now(),
-        }).execute()
+        try:
+            result = self.client.table("assignments").insert({
+                "class_id": class_id,
+                "title": title.strip(),
+                "context": context.strip(),
+                "answer_key": answer_key.strip(),
+                "answer_key_source": answer_key_source,
+                "created_at": self._now(),
+            }).execute()
+        except Exception:
+            # Fallback: column might not exist on old schema
+            result = self.client.table("assignments").insert({
+                "class_id": class_id,
+                "title": title.strip(),
+                "context": context.strip(),
+                "answer_key": answer_key.strip(),
+                "created_at": self._now(),
+            }).execute()
         return result.data[0]["id"]
 
     def list_assignments(self, class_id: int) -> List[Assignment]:
-        result = self.client.table("assignments").select("*").eq("class_id", class_id).order("created_at", desc=True).execute()
+        result = self.client.table("assignments").select("id,class_id,title,context,answer_key,created_at") \
+            .eq("class_id", class_id).order("created_at", desc=True).execute()
         return [Assignment(**self._row_to_dict(r)) for r in (result.data or [])]
 
     def get_assignment(self, assignment_id: int) -> Assignment:
-        result = self.client.table("assignments").select("*").eq("id", assignment_id).single().execute()
-        return Assignment(**self._row_to_dict(result.data))
+        result = self.client.table("assignments").select("id,class_id,title,context,answer_key,created_at") \
+            .eq("id", assignment_id).execute()
+        if not result.data:
+            raise ValueError(f"Assignment {assignment_id} not found.")
+        return Assignment(**self._row_to_dict(result.data[0]))
 
     # ── Feedback methods ──────────────────────────────────────────────────────
 
