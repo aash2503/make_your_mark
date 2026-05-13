@@ -12,6 +12,7 @@ class ClassRecord:
     id: int
     name: str
     created_at: str
+    teacher_id: Optional[int] = None
 
 
 @dataclass
