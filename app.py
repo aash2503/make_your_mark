@@ -369,6 +369,22 @@ def build_google_flow(config, state=None):
     return flow
 
 
+def get_query_params():
+    if hasattr(st, "experimental_get_query_params"):
+        return st.experimental_get_query_params()
+    if hasattr(st, "get_query_params"):
+        return st.get_query_params()
+    raise RuntimeError("Streamlit version does not support query parameter retrieval.")
+
+
+def set_query_params(params=None):
+    if hasattr(st, "experimental_set_query_params"):
+        return st.experimental_set_query_params(**(params or {}))
+    if hasattr(st, "set_query_params"):
+        return st.set_query_params(**(params or {}))
+    raise RuntimeError("Streamlit version does not support query parameter setting.")
+
+
 def get_google_authorization_url():
     config = get_google_oauth_config()
     if not config:
@@ -383,7 +399,7 @@ def get_google_authorization_url():
 
 
 def handle_google_oauth_callback(db: Database) -> bool:
-    params = st.experimental_get_query_params()
+    params = get_query_params()
     if "code" not in params or "state" not in params:
         return False
 
@@ -431,7 +447,7 @@ def handle_google_oauth_callback(db: Database) -> bool:
     st.session_state.authenticated = True
     st.session_state.teacher = teacher
     st.session_state.needs_setup = not bool(teacher.get("setup_complete"))
-    st.experimental_set_query_params()
+    set_query_params()
     st.rerun()
     return True
 
