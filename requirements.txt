@@ -1,9 +1,6 @@
-streamlit==1.50.0
+streamlit>=1.35.0
 pandas
-requests
 Pillow
 pytesseract
 pypdf
 google-generativeai>=0.7.0
-google-auth
-google-auth-oauthlib

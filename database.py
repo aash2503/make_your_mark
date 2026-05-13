@@ -111,6 +111,7 @@ class Database:
                 email TEXT NOT NULL UNIQUE,
                 display_name TEXT NOT NULL,
                 password_hash TEXT,
+                teacher_code TEXT UNIQUE,
                 google_sub TEXT,
                 school TEXT,
                 subject TEXT,
@@ -120,6 +121,11 @@ class Database:
             );
             """
         )
+        # Add teacher_id to classes if it doesn't exist (migration)
+        try:
+            cursor.execute("ALTER TABLE classes ADD COLUMN teacher_id INTEGER REFERENCES teachers(id)")
+        except sqlite3.OperationalError:
+            pass  # column already exists
         self.conn.commit()
 
     # ── Teacher account methods ───────────────────────────────────────────────
@@ -128,15 +134,26 @@ class Database:
     def _hash_password(password: str) -> str:
         return hashlib.sha256(password.encode()).hexdigest()
 
+    @staticmethod
+    def _generate_teacher_code() -> str:
+        import random, string
+        return "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
+
     def create_teacher(self, email: str, display_name: str, password: str = None, google_sub: str = None) -> int:
         cursor = self.conn.cursor()
         pw_hash = self._hash_password(password) if password else None
+        code = self._generate_teacher_code()
         cursor.execute(
-            "INSERT INTO teachers (email, display_name, password_hash, google_sub, created_at) VALUES (?, ?, ?, ?, ?)",
-            (email.strip().lower(), display_name.strip(), pw_hash, google_sub, datetime.utcnow().isoformat()),
+            "INSERT INTO teachers (email, display_name, password_hash, teacher_code, google_sub, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (email.strip().lower(), display_name.strip(), pw_hash, code, google_sub, datetime.utcnow().isoformat()),
         )
         self.conn.commit()
         return cursor.lastrowid
+
+    def get_teacher_by_code(self, code: str):
+        cursor = self.conn.cursor()
+        row = cursor.execute("SELECT * FROM teachers WHERE teacher_code = ?", (code.strip().upper(),)).fetchone()
+        return dict(row) if row else None
 
     def get_teacher_by_email(self, email: str):
         cursor = self.conn.cursor()
@@ -178,18 +195,21 @@ class Database:
         row = cursor.execute("SELECT COUNT(*) as cnt FROM teachers").fetchone()
         return row["cnt"] > 0
 
-    def add_class(self, name: str) -> int:
+    def add_class(self, name: str, teacher_id: int = None) -> int:
         cursor = self.conn.cursor()
         cursor.execute(
-            "INSERT INTO classes (name, created_at) VALUES (?, ?)",
-            (name.strip(), datetime.utcnow().isoformat()),
+            "INSERT INTO classes (name, teacher_id, created_at) VALUES (?, ?, ?)",
+            (name.strip(), teacher_id, datetime.utcnow().isoformat()),
         )
         self.conn.commit()
         return cursor.lastrowid
 
-    def list_classes(self) -> List[ClassRecord]:
+    def list_classes(self, teacher_id: int = None) -> List[ClassRecord]:
         cursor = self.conn.cursor()
-        rows = cursor.execute("SELECT * FROM classes ORDER BY name").fetchall()
+        if teacher_id:
+            rows = cursor.execute("SELECT * FROM classes WHERE teacher_id = ? ORDER BY name", (teacher_id,)).fetchall()
+        else:
+            rows = cursor.execute("SELECT * FROM classes ORDER BY name").fetchall()
         return [ClassRecord(**row) for row in rows]
 
     def get_class(self, class_id: int) -> ClassRecord:
