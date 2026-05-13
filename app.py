@@ -420,6 +420,15 @@ def handle_google_oauth_callback(db: Database) -> bool:
 
     state = params["state"]
     code = params["code"]
+
+    # ── Debug: show code validity without leaking the full code ──
+    st.caption(
+        f"DEBUG — st.version={st.__version__} | "
+        f"code_len={len(code)} | "
+        f"code_start={code[:8]}... | "
+        f"code_end=...{code[-8:]}"
+    )
+
     expected_state = st.session_state.get("google_oauth_state")
     if expected_state and state != expected_state:
         st.error("Google OAuth state mismatch. Please try again.")
