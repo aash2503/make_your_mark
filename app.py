@@ -372,10 +372,12 @@ def build_google_flow(config, state=None):
 
 
 def get_query_params():
+    """Return query params as a dict of plain strings (compatible with both old and new Streamlit APIs)."""
     if hasattr(st, "query_params"):
-        return st.query_params
+        return dict(st.query_params)
     if hasattr(st, "experimental_get_query_params"):
-        return st.experimental_get_query_params()
+        raw = st.experimental_get_query_params()
+        return {k: v[0] if isinstance(v, list) else v for k, v in raw.items()}
     return None
 
 
@@ -416,8 +418,8 @@ def handle_google_oauth_callback(db: Database) -> bool:
     if "code" not in params or "state" not in params:
         return False
 
-    state = params["state"][0]
-    code = params["code"][0]
+    state = params["state"]
+    code = params["code"]
     expected_state = st.session_state.get("google_oauth_state")
     if expected_state and state != expected_state:
         st.error("Google OAuth state mismatch. Please try again.")
