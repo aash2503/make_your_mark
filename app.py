@@ -429,7 +429,18 @@ def handle_google_oauth_callback(db: Database) -> bool:
         return False
 
     flow = build_google_flow(config, state=state)
-    flow.fetch_token(code=code)
+    try:
+        flow.fetch_token(code=code)
+    except Exception as exc:
+        st.error(
+            f"Google token exchange failed. This usually means the redirect URI "
+            f"in Google Cloud Console does not match the one used by the app "
+            f"(`{config['redirect_uri']}`). "
+            f"Please verify in Google Cloud → APIs & Services → Credentials → "
+            f"your OAuth 2.0 Client ID → Authorized redirect URIs contains exactly: "
+            f"`{config['redirect_uri']}`"
+        )
+        return False
     credentials = flow.credentials
 
     try:
