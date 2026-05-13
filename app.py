@@ -230,7 +230,6 @@ def get_database() -> Database:
 def get_gemini_client() -> GeminiClient:
     return GeminiClient(
         api_key=os.environ.get("GOOGLE_API_KEY") or st.secrets.get("google_api_key"),
-        model=os.environ.get("GEMINI_MODEL") or st.secrets.get("gemini_model", "text-bison-1"),
     )
 
 
@@ -637,6 +636,11 @@ def main():
     teacher_code = teacher.get("teacher_code", "")
     if teacher_code:
         st.sidebar.caption(f"Your code: **{teacher_code}**")
+
+    # Show active Gemini model
+    gemini = get_gemini_client()
+    if gemini.last_model_used:
+        st.sidebar.caption(f"🧠 Model: `{gemini.last_model_used}`")
 
     st.sidebar.title("Navigation")
     st.sidebar.markdown("## Classes & Assignments")

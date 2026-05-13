@@ -1,5 +1,6 @@
 import os
-from typing import List
+import time
+from typing import List, Optional
 
 import google.generativeai as genai
 
@@ -25,31 +26,92 @@ SYSTEM_INSTRUCTION = (
     "Do not provide explanation outside the LaTeX document."
 )
 
+# Default ranked model list — first choice is tried first, then fallback
+DEFAULT_MODEL_RANK = [
+    "gemini-2.5-pro",
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+]
+
+# Errors that should trigger a fallback (rate limiting, overloaded, etc.)
+_FALLBACK_ERRORS = (
+    "429",                # Rate limit
+    "503",                # Service unavailable
+    "RESOURCE_EXHAUSTED", # Quota exhausted
+    "UNAVAILABLE",        # Temporarily unavailable
+    "INTERNAL",           # Internal server error
+    "DEADLINE_EXCEEDED",  # Timeout
+)
+
+
+def _is_fallback_error(error: Exception) -> bool:
+    """Return True if this error should trigger model fallback."""
+    msg = str(error).upper()
+    return any(token in msg for token in _FALLBACK_ERRORS)
+
 
 class GeminiClient:
-    def __init__(self, api_key: str, model: str = "gemini-3.1-flash-lite"):
+    def __init__(self, api_key: str, models: Optional[List[str]] = None):
         if not api_key:
             raise ValueError(
                 "Gemini API key is required. Set GOOGLE_API_KEY in environment or Streamlit secrets."
             )
         genai.configure(api_key=api_key)
-        # Normalise legacy model names
-        if model in ("text-bison-1", "text-bison-001", "gemini-pro", "gemini-1.5-flash", "gemini-2.0-flash-lite"):
-            model = "gemini-3.1-flash-lite"
-        self.model_name = model
-        self._model = genai.GenerativeModel(
-            model_name=self.model_name,
-            system_instruction=SYSTEM_INSTRUCTION,
-            generation_config=genai.GenerationConfig(
-                temperature=0.0,
-                top_p=0.8,
-                max_output_tokens=4096,
-            ),
+        self.models = models or DEFAULT_MODEL_RANK
+        self._model_cache: dict = {}       # model_name → GenerativeModel
+        self._cooldown: dict = {}          # model_name → timestamp when cooldown ends
+        self._cooldown_seconds = 60        # how long to skip a rate-limited model
+        self.last_model_used: Optional[str] = None
+
+    def _get_model(self, model_name: str):
+        """Get or create a cached GenerativeModel instance."""
+        if model_name not in self._model_cache:
+            self._model_cache[model_name] = genai.GenerativeModel(
+                model_name=model_name,
+                system_instruction=SYSTEM_INSTRUCTION,
+                generation_config=genai.GenerationConfig(
+                    temperature=0.0,
+                    top_p=0.8,
+                    max_output_tokens=4096,
+                ),
+            )
+        return self._model_cache[model_name]
+
+    def _call(self, prompt: str) -> tuple[str, str]:
+        """Call Gemini with ranked fallback. Returns (response_text, model_used)."""
+        last_error = None
+
+        for model_name in self.models:
+            # Skip models in cooldown
+            if model_name in self._cooldown:
+                if time.time() < self._cooldown[model_name]:
+                    continue
+                del self._cooldown[model_name]
+
+            try:
+                model = self._get_model(model_name)
+                response = model.generate_content(prompt)
+                self.last_model_used = model_name
+                return response.text.strip(), model_name
+
+            except Exception as exc:
+                last_error = exc
+                if _is_fallback_error(exc):
+                    self._cooldown[model_name] = time.time() + self._cooldown_seconds
+                    continue
+                # Non-fallback error — re-raise immediately
+                raise
+
+        # All models exhausted
+        raise RuntimeError(
+            f"All Gemini models exhausted. Last error: {last_error}. "
+            f"Models tried: {self.models}"
         )
 
-    def _call(self, prompt: str) -> str:
-        response = self._model.generate_content(prompt)
-        return response.text.strip()
+    @property
+    def model_name(self) -> str:
+        """Return the primary (first-choice) model name."""
+        return self.models[0] if self.models else "unknown"
 
     def generate_student_feedback(
         self,
@@ -71,7 +133,8 @@ class GeminiClient:
             "Glows, Grows, and Action Items. "
             "Use xcolor and tcolorbox for styling. Return only raw LaTeX code."
         )
-        return self._call(prompt)
+        result, _ = self._call(prompt)
+        return result
 
     def generate_class_report(
         self,
@@ -98,4 +161,5 @@ class GeminiClient:
             "Best Techniques Observed, Class-Wide Trends, and a Progression Table comparing Draft 1 vs Draft 2. "
             "Return only LaTeX code and do not include plain text explanation outside LaTeX."
         )
-        return self._call(prompt)
+        result, _ = self._call(prompt)
+        return result
