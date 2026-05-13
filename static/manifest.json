@@ -6,8 +6,8 @@
   "display": "standalone",
   "display_override": ["standalone", "fullscreen"],
   "orientation": "any",
-  "background_color": "#071020",
-  "theme_color": "#071020",
+  "background_color": "#0a1128",
+  "theme_color": "#0a1128",
   "categories": ["education", "productivity"],
   "icons": [
     {

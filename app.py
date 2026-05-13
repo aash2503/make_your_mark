@@ -22,38 +22,47 @@ st.set_page_config(page_title="MY-Mark", layout="wide")
 
 # ── Colour tokens ─────────────────────────────────────────────────────────────
 _C = {
-    "bg":       "#071020",   # deep dark blue page background
-    "panel":    "#0d1e3a",   # card / panel background
-    "border":   "#1e3a5f",   # subtle border
-    "text":     "#e8edf5",   # primary text
-    "muted":    "#4a7aaa",   # secondary / muted text
-    "salmon":   "#fa7c6a",   # salmon accent
+    "bg":       "#0a1128",   # deep navy background
+    "panel":    "#111d3b",   # lighter navy for cards/panels
+    "border":   "#f8fafc",   # off-white — main border colour
+    "text":     "#f8fafc",   # off-white — primary text
+    "muted":    "#94a3b8",   # slate-400 — secondary text
+    "salmon":   "#ff7f50",   # coral/salmon accent
     "teal":     "#14b8a6",   # teal accent
-    "amber":    "#f59e0b",   # amber accent — now primary
-    "gold":     "#fbbf24",   # lighter gold for highlights
-    "amber-bg": "rgba(245,158,11,0.12)",  # amber tint
-    "input_bg": "#060e1a",   # input field background
+    "amber":    "#f59e0b",   # amber — primary highlight
+    "gold":     "#fbbf24",   # lighter gold
+    "success":  "#10b981",   # emerald — success indicators
+    "input_bg": "#0d1635",   # input field background
 }
 
 def inject_css() -> None:
     st.markdown(
         f"""
         <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap');
 
         html, body, [class*="css"] {{
-            font-family: 'Inter', sans-serif;
+            font-family: 'Century Gothic', CenturyGothic, AppleGothic, sans-serif !important;
             background-color: {_C['bg']} !important;
             color: {_C['text']} !important;
         }}
-        .stApp {{ background-color: {_C['bg']} !important; }}
+        .stApp {{ 
+            background-color: {_C['bg']} !important;
+            background-image: radial-gradient(ellipse at 50% 0%, rgba(245,158,11,0.04) 0%, transparent 60%);
+        }}
         #MainMenu, footer, header {{ visibility: hidden; }}
+
+        /* Input fields use monospace */
+        .stTextInput input, .stTextArea textarea, .stSelectbox [role="listbox"] {{
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace !important;
+        }}
 
         .main-title {{
             font-size: 2.5rem;
-            font-weight: 800;
+            font-weight: 900;
             color: {_C['text']};
             margin-bottom: 0.25rem;
+            letter-spacing: -0.02em;
         }}
         .subheader-text {{
             font-size: 1rem;
@@ -63,17 +72,22 @@ def inject_css() -> None:
             max-width: 720px;
         }}
 
+        /* ── Cards with glassmorphism ── */
         .section-card, .small-card, .amber-card {{
-            background: rgba(255,255,255,0.03);
-            border: 1px solid rgba(245,158,11,0.15);
+            background: rgba(17, 29, 59, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 2px solid {_C['amber']};
             border-radius: 22px;
             padding: 1.25rem 1.4rem;
-            box-shadow: 0 24px 55px rgba(0, 0, 0, 0.14);
+            box-shadow: 0 8px 0 rgba(245,158,11,0.15), 0 24px 55px rgba(0, 0, 0, 0.25);
             margin-bottom: 1rem;
         }}
 
         .small-card {{
             padding: 1rem 1.2rem;
+            border-width: 1.5px;
+            box-shadow: 0 4px 0 rgba(245,158,11,0.1), 0 16px 36px rgba(0, 0, 0, 0.18);
         }}
 
         .section-label {{
@@ -81,8 +95,8 @@ def inject_css() -> None:
             align-items: center;
             gap: 0.5rem;
             font-size: 0.75rem;
-            font-weight: 700;
-            letter-spacing: 0.16em;
+            font-weight: 900;
+            letter-spacing: 0.18em;
             text-transform: uppercase;
             color: {_C['muted']};
             margin-bottom: 0.75rem;
@@ -91,49 +105,73 @@ def inject_css() -> None:
         .section-label.teal   {{ color: {_C['teal']}; }}
         .section-label.amber  {{ color: {_C['amber']}; }}
 
+        /* ── Neo-brutalist buttons ── */
         .stButton>button {{
-            font-family: 'Inter', sans-serif;
-            font-weight: 700;
+            font-family: 'Century Gothic', CenturyGothic, AppleGothic, sans-serif !important;
+            font-weight: 900 !important;
+            letter-spacing: 0.08em !important;
+            text-transform: uppercase;
             font-size: 0.85rem;
             line-height: 1.1;
             border-radius: 16px;
             color: #ffffff;
             background: linear-gradient(135deg, {_C['teal']}, {_C['amber']});
-            border: none;
+            border: 2px solid {_C['amber']} !important;
             min-height: 48px;
-            box-shadow: 0 18px 32px rgba(245,158,11,0.22);
-            transition: transform 0.16s ease, opacity 0.16s ease;
+            box-shadow: 0 6px 0 rgba(245,158,11,0.3), 0 18px 32px rgba(245,158,11,0.18);
+            transition: transform 0.12s ease, box-shadow 0.12s ease;
         }}
-        .stButton>button:hover {{ transform: translateY(-1px); opacity: 0.96; box-shadow: 0 22px 38px rgba(245,158,11,0.32); }}
+        .stButton>button:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 8px 0 rgba(245,158,11,0.4), 0 24px 42px rgba(245,158,11,0.28);
+        }}
+        .stButton>button:active {{
+            transform: translateY(2px);
+            box-shadow: 0 2px 0 rgba(245,158,11,0.2), 0 8px 18px rgba(245,158,11,0.12);
+        }}
 
+        /* ── Inputs ── */
         .stTextInput>div>div>input,
         .stTextArea>div>div>textarea,
         .stSelectbox>div>div>div {{
-            background: rgba(255, 255, 255, 0.05) !important;
+            background: {_C['input_bg']} !important;
             color: {_C['text']} !important;
-            border: 1px solid rgba(255,255,255,0.12) !important;
-            border-radius: 16px !important;
+            border: 2px solid {_C['border']} !important;
+            border-radius: 14px !important;
             padding: 0.9rem !important;
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace !important;
         }}
         .stTextInput>div>div>input:focus,
         .stTextArea>div>div>textarea:focus {{
             border-color: {_C['amber']} !important;
-            box-shadow: 0 0 0 2px rgba(245,158,11,0.22) !important;
+            box-shadow: 0 0 0 3px rgba(245,158,11,0.25), 0 4px 0 rgba(245,158,11,0.15) !important;
         }}
 
         .stFileUploader>div>label {{
             border-radius: 18px;
-            border: 1px dashed rgba(255,255,255,0.16);
-            background: rgba(255,255,255,0.03);
+            border: 2px dashed {_C['amber']};
+            background: rgba(245,158,11,0.05);
         }}
 
+        /* ── Sidebar — glassmorphism ── */
         [data-testid="stSidebar"] {{
-            background-color: rgba(255,255,255,0.04) !important;
-            border-right: 1px solid rgba(245,158,11,0.12);
+            background: rgba(10, 17, 40, 0.95) !important;
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-right: 2px solid {_C['amber']} !important;
         }}
-        [data-testid=\"stSidebar\"] * {{ color: {_C['text']} !important; }}
+        [data-testid="stSidebar"] * {{ color: {_C['text']} !important; }}
 
-        /* Mobile-friendly scaling */
+        /* ── Expanders ── */
+        .streamlit-expanderHeader {{
+            background: rgba(17, 29, 59, 0.8) !important;
+            backdrop-filter: blur(8px);
+            border: 2px solid {_C['amber']} !important;
+            border-radius: 14px !important;
+            font-weight: 700 !important;
+        }}
+
+        /* ── Mobile ── */
         @media (max-width: 768px) {{
             .main-title {{ font-size: 1.6rem !important; }}
             .login-wordmark {{ font-size: 1.5rem !important; }}
@@ -143,36 +181,34 @@ def inject_css() -> None:
             .stTextArea>div>div>textarea {{ padding: 0.7rem !important; font-size: 16px !important; }}
         }}
 
-        .streamlit-expanderHeader {{
-            background: rgba(255,255,255,0.04) !important;
-            border: 1px solid rgba(255,255,255,0.08) !important;
-            border-radius: 16px !important;
-        }}
-
+        /* ── Auth ── */
         .auth-stripe {{
-            height: 4px;
+            height: 5px;
             background: linear-gradient(90deg, {_C['teal']} 0%, {_C['salmon']} 50%, {_C['amber']} 100%);
             border-radius: 99px;
             margin-bottom: 1.5rem;
         }}
 
         .login-wordmark {{
-            font-size: 2rem;
-            font-weight: 800;
-            letter-spacing: 0.04em;
+            font-size: 2.5rem;
+            font-weight: 900;
+            letter-spacing: 0.06em;
             color: {_C['text']};
             line-height: 1.05;
+            text-transform: uppercase;
         }}
         .login-wordmark .s {{ color: {_C['salmon']}; }}
         .login-wordmark .t {{ color: {_C['teal']}; }}
+
         .login-sub {{
-            font-size: 0.75rem;
-            letter-spacing: 0.12em;
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.14em;
             text-transform: uppercase;
             color: {_C['amber']};
             margin-top: 0.75rem;
             margin-bottom: 1.5rem;
-            line-height: 1.5;
+            line-height: 1.6;
         }}
 
         .auth-divider {{
@@ -181,39 +217,46 @@ def inject_css() -> None:
             gap: 0.75rem;
             margin: 1rem 0;
             color: {_C['muted']};
-            font-size: 0.8rem;
+            font-size: 0.75rem;
+            font-weight: 700;
             text-transform: uppercase;
+            letter-spacing: 0.12em;
         }}
         .auth-divider::before, .auth-divider::after {{
             content: '';
             flex: 1;
-            height: 1px;
-            background: rgba(255,255,255,0.12);
+            height: 2px;
+            background: {_C['amber']};
+            opacity: 0.3;
         }}
 
-        .status-ok {{ color: {_C['teal']}; font-size: 0.85rem; }}
-        .status-err {{ color: {_C['salmon']}; font-size: 0.85rem; }}
+        .status-ok {{ color: {_C['success']}; font-size: 0.85rem; font-weight: 700; }}
+        .status-err {{ color: {_C['salmon']}; font-size: 0.85rem; font-weight: 700; }}
+
         .avatar-row {{ display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 1rem; }}
         .avatar-chip {{
             width: 44px; height: 44px;
-            background: rgba(255,255,255,0.05);
-            border: 1px solid rgba(255,255,255,0.08);
+            background: {_C['input_bg']};
+            border: 2px solid {_C['border']};
             border-radius: 14px;
             display: flex; align-items: center; justify-content: center;
             font-size: 1.4rem;
             cursor: pointer;
-            transition: transform 0.16s ease, border-color 0.16s ease;
+            transition: transform 0.12s ease, border-color 0.12s ease;
         }}
         .avatar-chip.selected {{
             border-color: {_C['salmon']};
-            transform: translateY(-1px);
-            background: rgba(250,124,106,0.15);
+            transform: translateY(-2px);
+            background: rgba(255,127,80,0.18);
+            box-shadow: 0 4px 0 rgba(255,127,80,0.25);
         }}
         </style>
         """,
         unsafe_allow_html=True,
     )
     inject_pwa_meta()
+
+@st.cache_resource
 
 @st.cache_resource
 def get_database() -> Database:
@@ -240,7 +283,7 @@ def inject_pwa_meta() -> None:
 
           const themeMeta = document.createElement('meta');
           themeMeta.name = 'theme-color';
-          themeMeta.content = '#071020';
+          themeMeta.content = '#0a1128';
           document.head.appendChild(themeMeta);
 
           // iOS full-screen / standalone mode
