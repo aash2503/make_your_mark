@@ -35,6 +35,20 @@ class Assignment:
     context: str
     answer_key: str
     created_at: str
+    answer_key_source: str = "manual"
+    context_files: str = "[]"
+    answer_key_files: str = "[]"
+
+
+@dataclass
+class Submission:
+    id: int
+    student_id: int
+    assignment_id: int
+    submission_text: str
+    status: str
+    created_at: str
+    file_paths: str = "[]"
 
 
 @dataclass
@@ -181,12 +195,14 @@ class Database:
 
     # ── Assignment methods ────────────────────────────────────────────────────
 
-    def add_assignment(self, class_id: int, title: str, context: str, answer_key: str) -> int:
+    def add_assignment(self, class_id: int, title: str, context: str, answer_key: str,
+                        answer_key_source: str = "manual") -> int:
         result = self.client.table("assignments").insert({
             "class_id": class_id,
             "title": title.strip(),
             "context": context.strip(),
             "answer_key": answer_key.strip(),
+            "answer_key_source": answer_key_source,
             "created_at": self._now(),
         }).execute()
         return result.data[0]["id"]
@@ -246,6 +262,43 @@ class Database:
                 data["feedback_json"] = json.loads(data["feedback_json"])
             feedback_list.append(Feedback(**data))
         return feedback_list
+
+    # ── Submission methods (batch grading queue) ───────────────────────────────
+
+    def add_submission(self, student_id: int, assignment_id: int, text: str,
+                       file_paths: list = None) -> int:
+        result = self.client.table("submissions").insert({
+            "student_id": student_id,
+            "assignment_id": assignment_id,
+            "submission_text": text,
+            "file_paths": json.dumps(file_paths or []),
+            "status": "pending",
+            "created_at": self._now(),
+        }).execute()
+        return result.data[0]["id"]
+
+    def list_pending_submissions(self, assignment_id: int) -> List[Submission]:
+        result = self.client.table("submissions").select("*, students!inner(name)") \
+            .eq("assignment_id", assignment_id) \
+            .eq("status", "pending") \
+            .order("created_at") \
+            .execute()
+        subs = []
+        for row in (result.data or []):
+            data = self._row_to_dict(row)
+            students_data = data.pop("students", None)
+            if isinstance(students_data, dict):
+                data["student_name"] = students_data.get("name")
+            subs.append(Submission(**data))
+        return subs
+
+    def mark_submission_graded(self, submission_id: int):
+        self.client.table("submissions").update({"status": "graded"}).eq("id", submission_id).execute()
+
+    def get_pending_count(self, assignment_id: int) -> int:
+        result = self.client.table("submissions").select("id", count="exact") \
+            .eq("assignment_id", assignment_id).eq("status", "pending").execute()
+        return result.count or 0
 
     # ── PDF Storage ───────────────────────────────────────────────────────────
 

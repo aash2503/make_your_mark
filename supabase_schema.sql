@@ -40,6 +40,20 @@ CREATE TABLE IF NOT EXISTS assignments (
     title TEXT NOT NULL,
     context TEXT NOT NULL,
     answer_key TEXT NOT NULL,
+    answer_key_source TEXT DEFAULT 'manual',
+    context_files TEXT DEFAULT '[]',
+    answer_key_files TEXT DEFAULT '[]',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Pending submissions (for batch grading)
+CREATE TABLE IF NOT EXISTS submissions (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    student_id BIGINT NOT NULL REFERENCES students(id),
+    assignment_id BIGINT NOT NULL REFERENCES assignments(id),
+    submission_text TEXT NOT NULL,
+    file_paths TEXT DEFAULT '[]',
+    status TEXT DEFAULT 'pending',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -59,3 +73,9 @@ CREATE TABLE IF NOT EXISTS feedback (
 ALTER PUBLICATION supabase_realtime ADD TABLE classes;
 ALTER PUBLICATION supabase_realtime ADD TABLE students;
 ALTER PUBLICATION supabase_realtime ADD TABLE feedback;
+ALTER PUBLICATION supabase_realtime ADD TABLE submissions;
+
+-- ── Migration: add new columns to existing assignments table ───────────────
+ALTER TABLE assignments ADD COLUMN IF NOT EXISTS answer_key_source TEXT DEFAULT 'manual';
+ALTER TABLE assignments ADD COLUMN IF NOT EXISTS context_files TEXT DEFAULT '[]';
+ALTER TABLE assignments ADD COLUMN IF NOT EXISTS answer_key_files TEXT DEFAULT '[]';

@@ -159,6 +159,23 @@ class GeminiClient:
         result, _ = self._call(prompt)
         return result
 
+    def generate_answer_key(self, question_paper: str, subject: str = "English") -> str:
+        """Auto-generate a marking rubric / answer key from a question paper."""
+        prompt = (
+            f"Subject: {subject}\n"
+            f"Question Paper:\n{question_paper}\n\n"
+            "You are an experienced examiner. Generate a detailed answer key and marking rubric "
+            "for this question paper. Include:\n"
+            "- Model answer for each question\n"
+            "- Mark allocation per question\n"
+            "- Key points that must appear for full marks\n"
+            "- Common mistakes to penalise\n"
+            "- Grade boundaries if applicable\n\n"
+            "Return the answer key as clear structured text, not LaTeX."
+        )
+        result, _ = self._call(prompt)
+        return result
+
     def generate_class_report(
         self,
         class_name: str,

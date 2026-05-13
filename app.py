@@ -510,30 +510,59 @@ def extract_submission_text(uploaded_file) -> str:
 def student_upload_area(db: Database, class_id: int, assignment_id: int, student_id: int):
     st.header("Upload Student Work")
 
-    with st.form(key="student_submission_form"):
-        uploaded_file = st.file_uploader("Upload handwritten image or text file", type=["png", "jpg", "jpeg", "pdf", "txt"])
-        raw_text = st.text_area("OR paste student text here", height=220)
-        submit = st.form_submit_button("Grade Submission")
+    # Mode toggle
+    mode = st.radio("Grading mode:", ["Grade now", "Upload for batch grading later"],
+                    horizontal=True, key=f"mode_{student_id}")
+
+    with st.form(key=f"submission_form_{student_id}"):
+        # Multi-file upload
+        uploaded_files = st.file_uploader(
+            "Upload student work (supports multi-page — order by filename)",
+            type=["png", "jpg", "jpeg", "pdf", "txt"],
+            accept_multiple_files=True,
+            key=f"files_{student_id}"
+        )
+        raw_text = st.text_area("OR paste student text here", height=220, key=f"text_{student_id}")
+        submit = st.form_submit_button("Submit")
 
     if not submit:
         return
 
+    # Extract text from all uploaded files in order
     submission_text = raw_text.strip()
-    if uploaded_file and not submission_text:
-        with st.spinner("Extracting text from the uploaded file..."):
-            submission_text = extract_submission_text(uploaded_file)
+    file_paths = []
+
+    if uploaded_files and not submission_text:
+        parts = []
+        with st.spinner(f"Extracting text from {len(uploaded_files)} file(s)..."):
+            for i, f in enumerate(uploaded_files):
+                txt = extract_submission_text(f)
+                if txt:
+                    parts.append(f"[Page {i+1}]\n{txt}")
+        submission_text = "\n\n--- Page Break ---\n\n".join(parts)
 
     if not submission_text:
-        st.error("No extractable submission text found. Please paste the text directly or upload a clearer image/pdf.")
+        st.error("No extractable text found. Please paste text or upload clearer images.")
         return
 
+    if mode == "Upload for batch grading later":
+        db.add_submission(student_id, assignment_id, submission_text, file_paths)
+        st.success(f"✓ Submission queued for batch grading. {db.get_pending_count(assignment_id)} pending total.")
+        return
+
+    # Grade now mode
+    _grade_submission(db, class_id, assignment_id, student_id, submission_text)
+
+
+def _grade_submission(db: Database, class_id: int, assignment_id: int, student_id: int, submission_text: str):
+    """Grade a single submission and produce feedback PDF."""
     assignment = db.get_assignment(assignment_id)
     student = db.get_student(student_id)
     history = db.get_feedback_history(student_id, assignment_id)
     previous_feedback = "\n\n".join([f"Draft {item.draft_number}: {item.feedback_json}" for item in history]) or "None"
 
     gemini = get_gemini_client()
-    with st.spinner("Sending to Gemini and generating feedback..."):
+    with st.spinner(f"Grading {student.name}..."):
         try:
             latex_result = gemini.generate_student_feedback(
                 student_name=student.name,
@@ -543,30 +572,28 @@ def student_upload_area(db: Database, class_id: int, assignment_id: int, student
                 history=previous_feedback,
             )
         except Exception as exc:
-            st.error(f"Grading failed: {exc}")
+            st.error(f"Grading failed for {student.name}: {exc}")
             return
 
-    st.subheader("Generated LaTeX")
+    st.subheader(f"Feedback — {student.name}")
     st.code(latex_result, language="latex")
 
     tex_file = OUTPUT_DIR / f"feedback_{student_id}_{assignment_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}.tex"
     write_tex_file(tex_file, latex_result)
 
     pdf_file = _compile_with_fallback(tex_file, OUTPUT_DIR)
-    if pdf_file is None:
-        return
-
-    st.success("PDF generated successfully.")
-    with open(pdf_file, "rb") as f:
-        st.download_button("Download feedback PDF", f, file_name=pdf_file.name, mime="application/pdf")
-
-    # Upload PDF to Supabase Storage for cross-device access
-    pdf_url = None
-    try:
-        pdf_url = db.upload_pdf(pdf_file)
-        st.caption(f"☁️ PDF saved to cloud: [Open]({pdf_url})")
-    except Exception:
-        st.caption("⚠️ Could not upload PDF to cloud storage — local download still works.")
+    pdf_path = None
+    if pdf_file:
+        st.success("PDF generated successfully.")
+        with open(pdf_file, "rb") as f:
+            st.download_button("Download feedback PDF", f, file_name=pdf_file.name, mime="application/pdf")
+        # Upload to cloud
+        try:
+            pdf_path = db.upload_pdf(pdf_file)
+            st.caption(f"☁️ Saved to cloud: [Open]({pdf_path})")
+        except Exception:
+            pdf_path = str(pdf_file)
+            st.caption("⚠️ Could not upload PDF to cloud.")
 
     db.add_feedback(
         student_id=student_id,
@@ -578,8 +605,38 @@ def student_upload_area(db: Database, class_id: int, assignment_id: int, student
             "student_text": submission_text[:1000],
             "history": previous_feedback,
         },
-        feedback_pdf_path=pdf_url or str(pdf_file),
+        feedback_pdf_path=pdf_path,
     )
+
+
+def render_batch_grading(db: Database, class_id: int, assignment_id: int):
+    """Show pending submissions and allow batch grading."""
+    pending = db.list_pending_submissions(assignment_id)
+    if not pending:
+        return
+
+    st.header(f"📋 Batch Grading — {len(pending)} pending")
+
+    # Show pending list
+    pending_df = pd.DataFrame([{
+        "Student": getattr(s, 'student_name', f"ID {s.student_id}"),
+        "Submitted": s.created_at[:16],
+        "Text length": len(s.submission_text),
+    } for s in pending])
+    st.dataframe(pending_df, hide_index=True)
+
+    if st.button(f"Grade All {len(pending)} Pending Submissions", type="primary"):
+        progress = st.progress(0)
+        for i, sub in enumerate(pending):
+            student_name = getattr(sub, 'student_name', f"Student {sub.student_id}")
+            st.write(f"**Grading {i+1}/{len(pending)}: {student_name}**")
+            _grade_submission(db, class_id, assignment_id, sub.student_id, sub.submission_text)
+            db.mark_submission_graded(sub.id)
+            progress.progress((i + 1) / len(pending))
+            st.divider()
+
+        st.success(f"✅ All {len(pending)} submissions graded!")
+        st.rerun()
 
 
 def render_feedback_history(db: Database, student_id: int, assignment_id: int):
@@ -726,15 +783,77 @@ def main():
         st.write(pd.DataFrame([{"ID": s.id, "Name": s.name} for s in students]))
 
     with st.sidebar.expander("Manage Assignments", expanded=True):
-        new_assignment_title = st.text_input("Assignment Title", key="new_assignment_title")
-        new_context = st.text_area("Assignment Prompt / Context", key="new_assignment_context")
-        new_answer_key = st.text_area("Answer Key / Rubric / Model Answers", key="new_assignment_answer_key")
-        if st.button("Add Assignment", key="add_assignment") and new_assignment_title and new_context:
-            db.add_assignment(class_id, new_assignment_title, new_context, new_answer_key)
+        st.caption("Create a new assignment")
+        new_assignment_title = st.text_input("Title", key="new_assignment_title", placeholder="e.g. SA2 Continuous Writing")
+
+        # Question paper: text + optional file
+        qp_file = st.file_uploader("Upload question paper (PDF/image)", type=["png","jpg","jpeg","pdf"],
+                                   key="qp_upload", accept_multiple_files=True)
+        new_context = st.text_area("OR paste question paper / prompt", key="new_assignment_context",
+                                   placeholder="Write a composition of at least 150 words...")
+
+        # Answer key: text + optional file + auto-generate
+        st.markdown("**Answer Key / Rubric**")
+        ak_file = st.file_uploader("Upload answer key (PDF/image)", type=["png","jpg","jpeg","pdf"],
+                                   key="ak_upload", accept_multiple_files=True)
+        new_answer_key = st.text_area("OR paste answer key", key="new_assignment_answer_key",
+                                      placeholder="AO1 Content (20m): ...")
+
+        auto_generate = st.checkbox("Auto-generate answer key from question paper", key="auto_ak")
+
+        if st.button("Add Assignment", key="add_assignment") and new_assignment_title:
+            context_text = new_context.strip()
+
+            # Extract text from uploaded question paper files
+            if qp_file and not context_text:
+                with st.spinner("Extracting question paper..."):
+                    context_parts = []
+                    for f in qp_file:
+                        txt = extract_submission_text(f)
+                        if txt:
+                            context_parts.append(txt)
+                    context_text = "\n\n--- Page Break ---\n\n".join(context_parts)
+
+            if not context_text:
+                st.error("Please provide a question paper (text or file).")
+                st.stop()
+
+            # Determine answer key
+            answer_key_text = new_answer_key.strip()
+            answer_key_source = "manual"
+
+            if ak_file and not answer_key_text:
+                with st.spinner("Extracting answer key..."):
+                    ak_parts = []
+                    for f in ak_file:
+                        txt = extract_submission_text(f)
+                        if txt:
+                            ak_parts.append(txt)
+                    answer_key_text = "\n\n".join(ak_parts)
+
+            if auto_generate and not answer_key_text:
+                with st.spinner("Gemini is generating an answer key..."):
+                    gemini = get_gemini_client()
+                    try:
+                        answer_key_text = gemini.generate_answer_key(context_text)
+                        answer_key_source = "generated"
+                        st.success("Answer key auto-generated by Gemini.")
+                    except Exception as exc:
+                        st.error(f"Failed to generate answer key: {exc}")
+                        st.stop()
+
+            if not answer_key_text:
+                st.error("Please provide an answer key or enable auto-generate.")
+                st.stop()
+
+            db.add_assignment(class_id, new_assignment_title, context_text,
+                            answer_key_text, answer_key_source=answer_key_source)
             st.rerun()
 
         assignments = db.list_assignments(class_id)
-        st.write(pd.DataFrame([{"ID": a.id, "Title": a.title} for a in assignments]))
+        if assignments:
+            st.caption(f"{len(assignments)} assignment(s)")
+            st.write(pd.DataFrame([{"ID": a.id, "Title": a.title} for a in assignments]))
 
     assignment_options = {a.title: a.id for a in assignments}
     selected_assignment_title = st.sidebar.selectbox("Select Assignment", ["Choose an assignment"] + list(assignment_options.keys()), key="selected_assignment")
@@ -775,13 +894,17 @@ def main():
     with right:
         st.markdown("<div class='small-card'>", unsafe_allow_html=True)
         st.subheader("Quick Actions")
-        st.markdown("- Upload student work\n- Generate feedback PDF\n- Create class competency report")
+        st.markdown("- Upload & grade now\n- Upload for batch grading\n- Create class competency report")
         st.markdown("</div>", unsafe_allow_html=True)
 
         st.markdown("<div class='small-card'>", unsafe_allow_html=True)
         st.subheader("Status")
         st.markdown(f"**Students:** {len(students)}")
         st.markdown(f"**Assignments:** {len(assignments)}")
+        if assignment_id:
+            pending_count = db.get_pending_count(assignment_id)
+            if pending_count:
+                st.markdown(f"**📋 Pending grading:** {pending_count}")
         if student_id and assignment_id:
             history = db.get_feedback_history(student_id, assignment_id)
             st.markdown(f"**Drafts saved:** {len(history)}")
@@ -791,8 +914,11 @@ def main():
         st.warning("Select an assignment before grading.")
         return
 
+    # Show batch grading section for this assignment
+    render_batch_grading(db, class_id, assignment_id)
+
     if not student_id:
-        st.warning("Select a student before uploading work.")
+        st.info("Select a student above to upload and grade individual work.")
         return
 
     render_feedback_history(db, student_id, assignment_id)
