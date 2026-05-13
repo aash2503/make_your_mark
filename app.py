@@ -746,6 +746,197 @@ def render_class_report(db: Database, class_id: int, assignment_id: int):
             st.info("No existing student PDF files were found to merge.")
 
 
+def render_mobile(db: Database, teacher: dict, teacher_id: int):
+    """Mobile-first layout: camera input, linear flow, no sidebar."""
+    st.markdown("<div class='main-title' style='font-size:1.4rem;'>MY-Mark</div>", unsafe_allow_html=True)
+
+    teacher_code = teacher.get("teacher_code", "")
+    if teacher_code:
+        st.caption(f"Your code: **{teacher_code}** | 🧠 `{get_gemini_client().last_model_used or 'ready'}`")
+
+    # ── Section 1: Class ──
+    with st.expander("📚 Class", expanded=True):
+        classes = db.list_classes(teacher_id=teacher_id)
+        new_class = st.text_input("New class name", key="mob_new_class", placeholder="e.g. P6 English SA2")
+        if st.button("Add Class", key="mob_add_class") and new_class:
+            try:
+                db.add_class(new_class, teacher_id=teacher_id)
+                st.rerun()
+            except ValueError as exc:
+                st.error(str(exc))
+
+        if classes:
+            class_sel = st.selectbox("Active class", [c.name for c in classes], key="mob_class_sel")
+            class_id = next(c.id for c in classes if c.name == class_sel)
+            st.caption(f"{len(classes)} class(es)")
+        else:
+            class_id = None
+
+    if not class_id:
+        st.info("Create a class above to get started.")
+        return
+
+    selected_class = db.get_class(class_id)
+
+    # ── Section 2: Students ──
+    with st.expander("👥 Students", expanded=False):
+        new_student = st.text_input("Student name", key="mob_new_student", placeholder="e.g. Alice Tan")
+        if st.button("Add Student", key="mob_add_student") and new_student:
+            db.add_student(class_id, new_student)
+            st.rerun()
+        students = db.list_students(class_id)
+        if students:
+            st.write(pd.DataFrame([{"Name": s.name} for s in students], index=range(1, len(students)+1)))
+
+    # ── Section 3: Assignments ──
+    with st.expander("📝 Assignment", expanded=False):
+        if not students:
+            st.info("Add students first.")
+        new_title = st.text_input("Assignment title", key="mob_asm_title", placeholder="e.g. SA2 Paper 1")
+        new_context = st.text_area("Question / prompt", key="mob_asm_ctx", height=100,
+                                   placeholder="Paste the question paper text here...")
+        new_ak = st.text_area("Answer key / rubric", key="mob_asm_ak", height=100,
+                              placeholder="Paste rubric or check auto-generate below")
+        auto_ak = st.checkbox("Auto-generate answer key", key="mob_auto_ak")
+
+        if st.button("Create Assignment", key="mob_add_asm") and new_title and new_context:
+            ak_text = new_ak.strip()
+            ak_src = "manual"
+            if auto_ak and not ak_text:
+                with st.spinner("Gemini is writing the answer key..."):
+                    try:
+                        ak_text = get_gemini_client().generate_answer_key(new_context.strip())
+                        ak_src = "generated"
+                    except Exception as exc:
+                        st.error(f"Failed: {exc}")
+            if ak_text:
+                db.add_assignment(class_id, new_title, new_context.strip(), ak_text, answer_key_source=ak_src)
+                st.rerun()
+            else:
+                st.error("Provide an answer key or enable auto-generate.")
+
+        assignments = db.list_assignments(class_id)
+        assignment_sel = None
+        assignment_id = None
+        if assignments:
+            assignment_sel = st.selectbox("Active assignment", [a.title for a in assignments], key="mob_asm_sel")
+            assignment_id = next(a.id for a in assignments if a.title == assignment_sel)
+
+    if not assignment_id:
+        st.info("Create an assignment above.")
+        return
+
+    # ── Section 4: Upload & Grade ──
+    student_sel = None
+    student_id = None
+    if students:
+        student_sel = st.selectbox("Student", [s.name for s in students], key="mob_stu_sel")
+        student_id = next(s.id for s in students if s.name == student_sel)
+
+    if not student_id:
+        st.info("Select a student.")
+        return
+
+    assignment = db.get_assignment(assignment_id)
+
+    st.markdown("---")
+    st.caption(f"📝 {assignment.title}  |  👤 {student_sel}  |  📚 {selected_class.name}")
+
+    # Camera + file upload
+    st.caption("Upload student's work:")
+    cam_col, file_col = st.columns(2)
+    with cam_col:
+        camera_photo = st.camera_input("Take photo", key=f"cam_{student_id}")
+    with file_col:
+        uploaded_files = st.file_uploader(
+            "Upload file(s)", type=["png","jpg","jpeg","pdf","txt"],
+            accept_multiple_files=True, key=f"mob_files_{student_id}"
+        )
+
+    raw_text = st.text_area("OR paste text", key=f"mob_text_{student_id}", height=120)
+
+    # Grading mode
+    mode = st.radio("Mode", ["Grade now", "Save for batch"], horizontal=True, key=f"mob_mode_{student_id}")
+
+    if st.button("Submit", key=f"mob_submit_{student_id}", type="primary", use_container_width=True):
+        # Collect text from all sources
+        submission_text = raw_text.strip()
+        if camera_photo and not submission_text:
+            camera_photo.seek(0)
+            img_bytes = camera_photo.read()
+            try:
+                submission_text = get_gemini_client().extract_text_from_image(img_bytes, "image/jpeg")
+                st.caption("📷 Text extracted via Gemini Vision")
+            except Exception:
+                st.error("Could not read photo. Try uploading instead.")
+                return
+
+        if uploaded_files and not submission_text:
+            parts = []
+            for i, f in enumerate(uploaded_files):
+                txt = extract_submission_text(f)
+                if txt:
+                    parts.append(f"[Page {i+1}]\n{txt}")
+            submission_text = "\n\n---\n\n".join(parts)
+
+        if not submission_text:
+            st.error("No text found. Take a photo, upload, or paste text.")
+            return
+
+        if mode == "Save for batch":
+            db.add_submission(student_id, assignment_id, submission_text)
+            st.success(f"✓ Queued. {db.get_pending_count(assignment_id)} pending.")
+            st.rerun()
+        else:
+            _grade_submission(db, class_id, assignment_id, student_id, submission_text)
+
+    # ── Section 5: Batch grading ──
+    render_batch_grading(db, class_id, assignment_id)
+
+    # ── Section 6: Review ──
+    if student_id:
+        with st.expander("📋 Feedback History", expanded=False):
+            render_feedback_history(db, student_id, assignment_id)
+
+    with st.expander("📊 Class Report", expanded=False):
+        render_class_report(db, class_id, assignment_id)
+
+    # ── Footer ──
+    st.markdown("---")
+    if st.button("Sign Out", key="mob_signout"):
+        for k in ["authenticated", "teacher", "needs_setup", "setup_avatar", "new_teacher_code"]:
+            st.session_state.pop(k, None)
+        st.rerun()
+
+
+def _detect_mobile() -> bool:
+    """Detect mobile via query param + JS redirect for narrow screens."""
+    if st.session_state.get("is_mobile") is not None:
+        return st.session_state.is_mobile
+
+    # Check URL param (handle both old list-style and new string-style)
+    try:
+        raw = st.query_params.get("mobile")
+    except Exception:
+        raw = None
+    if raw in ("1", ["1"]):
+        st.session_state.is_mobile = True
+        return True
+
+    # Inject JS to auto-detect and redirect
+    components.html(
+        """<script>
+        if (window.innerWidth < 768 && !window.location.search.includes('mobile=1')) {
+            var sep = window.location.search ? '&' : '?';
+            window.location.search += sep + 'mobile=1';
+        }
+        </script>""",
+        height=0, width=0,
+    )
+    st.session_state.is_mobile = False
+    return False
+
+
 def main():
     db = get_database()
 
@@ -754,18 +945,27 @@ def main():
         render_login(db)
         return
 
-    # ── Account setup gate (new accounts) ──
+    # ── Account setup gate ──
     if st.session_state.get("needs_setup"):
         render_account_setup(db)
         return
 
     inject_css()
 
-    # ── Teacher greeting in sidebar ──
+    # ── Teacher info ──
     teacher = st.session_state.get("teacher", {})
-    avatar  = teacher.get("avatar", "🧑‍🏫") if isinstance(teacher, dict) else "🧑‍🏫"
-    name    = teacher.get("display_name", "Teacher") if isinstance(teacher, dict) else "Teacher"
     teacher_id = teacher.get("id") if isinstance(teacher, dict) else None
+
+    # ── Mobile detection ──
+    is_mobile = _detect_mobile()
+
+    if is_mobile:
+        render_mobile(db, teacher, teacher_id)
+        return
+
+    # ── Desktop layout below ──
+    avatar = teacher.get("avatar", "🧑‍🏫") if isinstance(teacher, dict) else "🧑‍🏫"
+    name = teacher.get("display_name", "Teacher") if isinstance(teacher, dict) else "Teacher"
 
     st.sidebar.markdown(
         f"<div style='padding:0.6rem 0; border-bottom:1px solid #1e3a5f; margin-bottom:0.8rem;'>"
