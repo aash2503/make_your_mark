@@ -889,7 +889,7 @@ def render_mobile(db: Database, teacher: dict, teacher_id: int):
         asm_sel = st.selectbox("Select assignment", [a.title for a in assignments], key="mob_asm_sel")
         assignment_id = next(a.id for a in assignments if a.title == asm_sel)
     else:
-        with st.form("mob_new_assignment"):
+        with st.form(f"mob_new_assignment_{class_id}"):
             new_title = st.text_input("Assignment title", key="mob_new_asm_title", placeholder="e.g. SA2 Paper 1")
             new_subject = st.selectbox("Subject", ["english", "mathematics", "science"], key="mob_new_subject")
             new_context = st.text_area("Question / prompt (optional)", key="mob_new_ctx", height=80)
@@ -910,12 +910,12 @@ def render_mobile(db: Database, teacher: dict, teacher_id: int):
     st.markdown("---")
     st.caption(f"📝 {assignment.title} · Subject: {getattr(assignment, 'subject', 'english').title()}")
 
-    camera_photo = st.camera_input("Take photo", key="mob_cam")
+    camera_photo = st.camera_input("Take photo", key=f"mob_cam_{assignment_id}")
     uploaded_files = st.file_uploader("Upload files", type=["png","jpg","jpeg","pdf","txt"],
-                                       accept_multiple_files=True, key="mob_files_main")
-    raw_text = st.text_area("OR paste text", key="mob_text_main", height=80)
+                                       accept_multiple_files=True, key=f"mob_files_{assignment_id}")
+    raw_text = st.text_area("OR paste text", key=f"mob_text_{assignment_id}", height=80)
 
-    if st.button("📤 Extract & Tag Student", key="mob_upload", type="primary", use_container_width=True):
+    if st.button("📤 Extract & Tag Student", key=f"mob_upload_{assignment_id}", type="primary", use_container_width=True):
         submission_text = raw_text.strip()
         if camera_photo and not submission_text:
             camera_photo.seek(0)
@@ -1063,39 +1063,38 @@ def _render_home(db: Database, teacher: dict, teacher_id: int, is_mobile: bool):
             unsafe_allow_html=True,
         )
 
-        # Pending count
         pending_all = db.list_all_pending(teacher_id)
         total_pending = sum(len(v["submissions"]) for v in pending_all.values()) if pending_all else 0
-
         st.markdown("<br>", unsafe_allow_html=True)
 
         # Card 1: Submit
-        with st.container(border=True):
-            st.subheader("📤 Submit Assignments")
-            st.caption("Take photos of student work. Map to class & student after upload. Best on mobile.")
-            if st.button("Start Submitting →", key="mode_submit", type="primary", use_container_width=True):
-                st.session_state.app_mode = "submit"
-                st.session_state.is_mobile = True
-                st.rerun()
+        st.markdown("#### 📤 Submit Assignments")
+        st.caption("Take photos of student work. Map to class & student after upload.")
+        if st.button("Start Submitting →", key="mode_submit", type="primary", use_container_width=True):
+            st.session_state.app_mode = "submit"
+            st.session_state.is_mobile = True
+            st.rerun()
+
+        st.markdown("<br>", unsafe_allow_html=True)
 
         # Card 2: Grade
-        with st.container(border=True):
-            badge = f" — {total_pending} pending" if total_pending else ""
-            st.subheader(f"📋 Grade Assignments{badge}")
-            st.caption("Review and grade uploaded student work. Generate feedback PDFs and class reports.")
-            if st.button("Start Grading →", key="mode_grade", type="primary", use_container_width=True):
-                st.session_state.app_mode = "grade"
-                st.session_state.is_mobile = False
-                st.rerun()
+        badge = f" — {total_pending} pending" if total_pending else ""
+        st.markdown(f"#### 📋 Grade Assignments{badge}")
+        st.caption("Review and grade uploaded submissions. Generate feedback PDFs.")
+        if st.button("Start Grading →", key="mode_grade", type="primary", use_container_width=True):
+            st.session_state.app_mode = "grade"
+            st.session_state.is_mobile = False
+            st.rerun()
+
+        st.markdown("<br>", unsafe_allow_html=True)
 
         # Card 3: Configure
-        with st.container(border=True):
-            st.subheader("⚙️ Configure Dashboards")
-            st.caption("Manage classes, students, assignments. Rename, archive, or delete.")
-            if st.button("Start Configuring →", key="mode_config", type="primary", use_container_width=True):
-                st.session_state.app_mode = "configure"
-                st.session_state.is_mobile = False
-                st.rerun()
+        st.markdown("#### ⚙️ Configure Dashboards")
+        st.caption("Manage classes, students, assignments. Rename, archive, delete.")
+        if st.button("Start Configuring →", key="mode_config", type="primary", use_container_width=True):
+            st.session_state.app_mode = "configure"
+            st.session_state.is_mobile = False
+            st.rerun()
 
 
 def main():
