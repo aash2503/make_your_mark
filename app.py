@@ -264,6 +264,12 @@ def get_database() -> Database:
     )
 
 @st.cache_resource
+def pdflatex_available() -> bool:
+    """Check if pdflatex is installed on the system."""
+    import shutil
+    return shutil.which("pdflatex") is not None
+
+@st.cache_resource
 def get_gemini_client() -> GeminiClient:
     return GeminiClient(
         api_key=os.environ.get("GOOGLE_API_KEY") or st.secrets.get("google_api_key"),
@@ -1278,6 +1284,10 @@ def main():
         gemini = get_gemini_client()
         if gemini.last_model_used:
             st.caption(f"🧠 `{gemini.last_model_used}`")
+        if pdflatex_available():
+            st.caption("📄 pdflatex ready")
+        else:
+            st.caption("⚠️ pdflatex missing")
         if st.button("📱 Mobile View", key="layout_toggle"):
             st.session_state.is_mobile = True
             st.rerun()
