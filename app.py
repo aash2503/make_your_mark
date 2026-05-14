@@ -846,8 +846,13 @@ def render_class_report(db: Database, class_id: int, assignment_id: int):
 
 
 def render_mobile(db: Database, teacher: dict, teacher_id: int):
-    """Mobile-first layout: quick submit → tag student + assignment."""
+    """Mobile-first layout: submit-first, then map to class/student/assignment."""
     st.markdown("<div class='main-title' style='font-size:1.4rem;'>MY-Mark</div>", unsafe_allow_html=True)
+
+    if st.button("🏠 Home", key="mob_back_home"):
+        st.session_state.app_mode = None
+        st.session_state.is_mobile = False
+        st.rerun()
 
     teacher_code = teacher.get("teacher_code", "")
     if teacher_code:
@@ -1030,6 +1035,69 @@ def _render_assignment_form(db: Database, class_id: int):
         st.write(pd.DataFrame([{"ID": a.id, "Title": a.title, "Subject": getattr(a,'subject','')} for a in assignments]))
 
 
+def _render_home(db: Database, teacher: dict, teacher_id: int, is_mobile: bool):
+    """Home screen: 'How can I make MY MARK today?' with 3 action cards."""
+    inject_css()
+    avatar = teacher.get("avatar", "🧑‍🏫") if isinstance(teacher, dict) else "🧑‍🏫"
+    name = teacher.get("display_name", "Teacher") if isinstance(teacher, dict) else "Teacher"
+
+    # Minimal sidebar
+    with st.sidebar:
+        st.markdown(f"### {avatar} {name}")
+        teacher_code = teacher.get("teacher_code", "")
+        if teacher_code:
+            st.caption(f"Code: **{teacher_code}**")
+        if st.button("Sign Out", key="home_signout"):
+            for k in ["authenticated", "teacher", "needs_setup", "setup_avatar", "new_teacher_code", "app_mode"]:
+                st.session_state.pop(k, None)
+            _clear_persisted_login()
+            st.rerun()
+
+    # Centre column
+    _, col, _ = st.columns([1, 2, 1])
+    with col:
+        st.markdown("<div class='auth-stripe'></div>", unsafe_allow_html=True)
+        st.markdown("<div class='login-wordmark' style='font-size:2rem;'>MY-Mark</div>", unsafe_allow_html=True)
+        st.markdown(
+            "<div class='login-sub' style='font-size:0.9rem;'>How can I make MY MARK today?</div>",
+            unsafe_allow_html=True,
+        )
+
+        # Pending count
+        pending_all = db.list_all_pending(teacher_id)
+        total_pending = sum(len(v["submissions"]) for v in pending_all.values()) if pending_all else 0
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # Card 1: Submit
+        with st.container(border=True):
+            st.subheader("📤 Submit Assignments")
+            st.caption("Take photos of student work. Map to class & student after upload. Best on mobile.")
+            if st.button("Start Submitting →", key="mode_submit", type="primary", use_container_width=True):
+                st.session_state.app_mode = "submit"
+                st.session_state.is_mobile = True
+                st.rerun()
+
+        # Card 2: Grade
+        with st.container(border=True):
+            badge = f" — {total_pending} pending" if total_pending else ""
+            st.subheader(f"📋 Grade Assignments{badge}")
+            st.caption("Review and grade uploaded student work. Generate feedback PDFs and class reports.")
+            if st.button("Start Grading →", key="mode_grade", type="primary", use_container_width=True):
+                st.session_state.app_mode = "grade"
+                st.session_state.is_mobile = False
+                st.rerun()
+
+        # Card 3: Configure
+        with st.container(border=True):
+            st.subheader("⚙️ Configure Dashboards")
+            st.caption("Manage classes, students, assignments. Rename, archive, or delete.")
+            if st.button("Start Configuring →", key="mode_config", type="primary", use_container_width=True):
+                st.session_state.app_mode = "configure"
+                st.session_state.is_mobile = False
+                st.rerun()
+
+
 def main():
     db = get_database()
 
@@ -1070,14 +1138,17 @@ def main():
     # ── Mobile toggle ──
     is_mobile = st.session_state.get("is_mobile", False)
 
-    if is_mobile:
-        # Show banner to return to desktop
-        st.warning("You're in mobile view. [Switch to Desktop]()", icon="📱")
-        if st.button("🖥 Return to Desktop View", key="force_desktop"):
-            st.session_state.is_mobile = False
-            st.rerun()
+    # ── Home screen: 3-action launcher ──
+    if not st.session_state.get("app_mode"):
+        _render_home(db, teacher, teacher_id, is_mobile)
+        return
+
+    if is_mobile or st.session_state.get("app_mode") == "submit":
+        st.session_state.is_mobile = True
         render_mobile(db, teacher, teacher_id)
         return
+
+    # ── Grade mode or Configure mode: desktop dashboard ──
 
     # ── Sidebar + main area sidebar-toggle ──
     avatar = teacher.get("avatar", "🧑‍🏫") if isinstance(teacher, dict) else "🧑‍🏫"
@@ -1112,7 +1183,13 @@ def main():
                 st.error(str(exc))
 
     # ── Landing page ──
-    st.markdown("<div class='main-title'>MY-Mark Dashboard</div>", unsafe_allow_html=True)
+    col_title, col_back = st.columns([4, 1])
+    with col_title:
+        st.markdown("<div class='main-title'>MY-Mark Dashboard</div>", unsafe_allow_html=True)
+    with col_back:
+        if st.button("🏠 Home", key="back_home_desk"):
+            st.session_state.app_mode = None
+            st.rerun()
 
     pending_all = db.list_all_pending(teacher_id)
     total_pending = sum(len(v["submissions"]) for v in pending_all.values()) if pending_all else 0
