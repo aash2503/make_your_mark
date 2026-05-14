@@ -1198,7 +1198,11 @@ def render_reports(db: Database, teacher_id: int):
                                     st.markdown(f"[Open PDF]({path})", unsafe_allow_html=True)
                                 elif Path(path).exists():
                                     with open(path, "rb") as pf:
-                                        st.download_button("Download", pf, file_name=f"{sname}_{asm.title}.pdf", key=f"rpt_{fb.id}", mime="application/pdf")
+                                        st.download_button("⬇ Download", pf, file_name=f"{sname}_{asm.title}.pdf", key=f"rpt_{fb.id}", mime="application/pdf")
+                                else:
+                                    st.caption("No file available")
+                            else:
+                                st.caption("Not yet generated")
 
 
 def main():
@@ -1433,6 +1437,23 @@ def main():
                     if st.button("Grade", key=f"gsub_{sub['id']}"):
                         _grade_submission(db, data['class_id'], data['assignment_id'], sub['student_id'], sub['submission_text'])
                         db.mark_submission_graded(sub['id'])
+                        st.rerun()
+            st.markdown("---")
+    elif assignment_id:
+        # Show per-assignment pending even if cross-class query returned empty
+        pending_local = db.list_pending_submissions(assignment_id)
+        if pending_local:
+            st.divider()
+            st.subheader(f"📋 Pending for this assignment — {len(pending_local)} submission(s)")
+            for sub in pending_local:
+                sname = getattr(sub, 'student_name', f"Student {sub.student_id}")
+                c1, c2 = st.columns([4, 1])
+                with c1:
+                    st.caption(f"👤 {sname} — {len(sub.submission_text)} chars")
+                with c2:
+                    if st.button("Grade", key=f"lsub_{sub.id}"):
+                        _grade_submission(db, class_id, sub.assignment_id, sub.student_id, sub.submission_text)
+                        db.mark_submission_graded(sub.id)
                         st.rerun()
             st.markdown("---")
 
