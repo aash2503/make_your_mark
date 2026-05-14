@@ -846,110 +846,117 @@ def render_class_report(db: Database, class_id: int, assignment_id: int):
 
 
 def render_mobile(db: Database, teacher: dict, teacher_id: int):
-    """Mobile-first layout: camera input, linear flow, no sidebar."""
+    """Mobile-first layout: quick submit → tag student + assignment."""
     st.markdown("<div class='main-title' style='font-size:1.4rem;'>MY-Mark</div>", unsafe_allow_html=True)
 
     teacher_code = teacher.get("teacher_code", "")
     if teacher_code:
-        st.caption(f"Your code: **{teacher_code}** | 🧠 `{get_gemini_client().last_model_used or 'ready'}`")
+        st.caption(f"Code: **{teacher_code}** | 🧠 `{get_gemini_client().last_model_used or 'ready'}`")
 
-    # ── Section 1: Class ──
-    with st.expander("📚 Class", expanded=True):
-        classes = db.list_classes(teacher_id=teacher_id)
-        new_class = st.text_input("New class name", key="mob_new_class", placeholder="e.g. P6 English SA2")
-        if st.button("Add Class", key="mob_add_class") and new_class:
-            try:
-                db.add_class(new_class, teacher_id=teacher_id)
-                st.rerun()
-            except ValueError as exc:
-                st.error(str(exc))
-
-        if classes:
-            class_sel = st.selectbox("Active class", [c.name for c in classes], key="mob_class_sel")
-            class_id = next(c.id for c in classes if c.name == class_sel)
-            st.caption(f"{len(classes)} class(es)")
-        else:
-            class_id = None
-
-    if not class_id:
-        st.info("Create a class above to get started.")
+    # ── Quick submit: class picker ──
+    classes = db.list_classes(teacher_id=teacher_id)
+    if not classes:
+        with st.expander("📚 Create First Class", expanded=True):
+            new_class = st.text_input("Class name", key="mob_new_class", placeholder="e.g. P6 English SA2")
+            if st.button("Create Class", key="mob_add_class") and new_class:
+                try:
+                    db.add_class(new_class, teacher_id=teacher_id)
+                    st.rerun()
+                except ValueError as exc:
+                    st.error(str(exc))
         return
 
-    selected_class = db.get_class(class_id)
+    class_sel = st.selectbox("Class", [c.name for c in classes], key="mob_class_sel")
+    class_id = next(c.id for c in classes if c.name == class_sel)
 
-    # ── Section 2: Select assignment ──
+    # ── Assignment: new or existing? ──
     assignments = db.list_assignments(class_id)
-    with st.expander("📝 Assignment", expanded=not bool(assignments)):
-        if not assignments:
-            st.info("Create an assignment on desktop first.")
-            return
-        assignment_sel = st.selectbox("Active assignment", [a.title for a in assignments], key="mob_asm_sel")
-        assignment_id = next(a.id for a in assignments if a.title == assignment_sel)
-        assignment = db.get_assignment(assignment_id)
-        st.caption(f"Subject: {getattr(assignment, 'subject', 'english').title()}")
-
+    assignment_id = None
     students = db.list_students(class_id)
 
-    # ── Section 3: Upload first, tag later ──
+    if assignments:
+        asm_mode = st.radio("Assignment", ["📋 Use existing", "➕ Create new"], horizontal=True, key="mob_asm_mode")
+    else:
+        asm_mode = "➕ Create new"
+        st.info("No assignments yet — create one below.")
+
+    if asm_mode == "📋 Use existing":
+        asm_sel = st.selectbox("Select assignment", [a.title for a in assignments], key="mob_asm_sel")
+        assignment_id = next(a.id for a in assignments if a.title == asm_sel)
+    else:
+        with st.form("mob_new_assignment"):
+            new_title = st.text_input("Assignment title", key="mob_new_asm_title", placeholder="e.g. SA2 Paper 1")
+            new_subject = st.selectbox("Subject", ["english", "mathematics", "science"], key="mob_new_subject")
+            new_context = st.text_area("Question / prompt (optional)", key="mob_new_ctx", height=80)
+            if st.form_submit_button("Create & Continue", type="primary"):
+                if new_title:
+                    db.add_assignment(class_id, new_title, new_context or "[No prompt]", "Auto-generate on desktop", subject=new_subject)
+                    st.rerun()
+                else:
+                    st.error("Please enter a title.")
+            return  # wait for form submit
+
+    if not assignment_id:
+        return
+
+    assignment = db.get_assignment(assignment_id)
+
+    # ── Upload ──
     st.markdown("---")
-    st.caption(f"📝 {assignment.title}")
+    st.caption(f"📝 {assignment.title} · Subject: {getattr(assignment, 'subject', 'english').title()}")
 
-    camera_photo = st.camera_input("Take photo of student's work", key="mob_cam")
-    uploaded_files = st.file_uploader("Upload file(s)", type=["png","jpg","jpeg","pdf","txt"],
+    camera_photo = st.camera_input("Take photo", key="mob_cam")
+    uploaded_files = st.file_uploader("Upload files", type=["png","jpg","jpeg","pdf","txt"],
                                        accept_multiple_files=True, key="mob_files_main")
-    raw_text = st.text_area("OR paste text", key="mob_text_main", height=100)
+    raw_text = st.text_area("OR paste text", key="mob_text_main", height=80)
 
-    # Extract text from uploads
-    if st.button("📤 Upload & Tag Student", key="mob_upload", type="primary", use_container_width=True):
+    if st.button("📤 Extract & Tag Student", key="mob_upload", type="primary", use_container_width=True):
         submission_text = raw_text.strip()
         if camera_photo and not submission_text:
             camera_photo.seek(0)
             try:
                 submission_text = get_gemini_client().extract_text_from_image(camera_photo.read(), "image/jpeg")
-                st.success("Text extracted from photo.")
             except Exception:
                 st.error("Could not read photo.")
                 st.stop()
         if uploaded_files and not submission_text:
-            parts = []
-            for i, f in enumerate(uploaded_files):
-                txt = extract_submission_text(f)
-                if txt:
-                    parts.append(f"[Page {i+1}]\n{txt}")
+            parts = [f"[Page {i+1}]\n{extract_submission_text(f)}" for i, f in enumerate(uploaded_files) if extract_submission_text(f)]
             submission_text = "\n\n---\n\n".join(parts)
-
         if not submission_text:
             st.error("No text found. Take a photo, upload, or paste.")
             st.stop()
-
-        # Store the extracted text temporarily and show student picker
         st.session_state.mob_submission_text = submission_text
         st.rerun()
 
-    # ── Section 4: Tag to student (shown after upload) ──
+    # ── Tag to student ──
     if st.session_state.get("mob_submission_text"):
-        st.success("Text extracted! Now tag to a student:")
+        st.success("✅ Text extracted!")
         if not students:
-            st.info("No students in this class. Add students on desktop first.")
+            # Quick add student inline
+            new_stu = st.text_input("Add student", key="mob_add_stu_quick", placeholder="Student name")
+            if st.button("Add & Select", key="mob_add_stu_btn") and new_stu:
+                db.add_student(class_id, new_stu)
+                st.rerun()
+            st.info("Add a student above, then submit.")
         else:
             student_sel = st.selectbox("Which student?", [s.name for s in students], key="mob_stu_tag")
             student_id = next((s.id for s in students if s.name == student_sel), None)
-            if st.button("✅ Confirm & Submit", key="mob_confirm", type="primary", use_container_width=True):
+            if st.button("✅ Submit", key="mob_confirm", type="primary", use_container_width=True):
                 try:
                     db.add_submission(student_id, assignment_id, st.session_state.mob_submission_text)
                 except RuntimeError as exc:
                     st.error(str(exc))
                     st.stop()
                 st.session_state.pop("mob_submission_text", None)
-                st.success(f"✓ {student_sel}'s work uploaded! {db.get_pending_count(assignment_id)} pending.")
+                st.success(f"✓ {student_sel}'s work submitted!")
                 st.rerun()
 
-    # ── Section 5: Pending status ──
+    # ── Quick actions ──
     pending = db.get_pending_count(assignment_id)
     if pending:
-        st.info(f"📋 {pending} submission(s) pending grading on desktop.")
+        st.info(f"📋 {pending} pending grading.")
+    st.caption(f"To grade: open MY-Mark on your laptop.")
 
-    # ── Footer ──
     st.markdown("---")
     if st.button("Sign Out", key="mob_signout"):
         for k in ["authenticated", "teacher", "needs_setup", "setup_avatar", "new_teacher_code"]:
