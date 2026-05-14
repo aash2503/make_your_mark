@@ -917,39 +917,22 @@ def render_mobile(db: Database, teacher: dict, teacher_id: int):
 
 
 def _detect_mobile() -> bool:
-    """Detect mobile: URL param, session toggle, or a visible switch."""
-    # Check URL param first
-    try:
-        raw = st.query_params.get("mobile")
-        if raw in ("1", "1"):
-            st.session_state.is_mobile = True
-            return True
-        if raw in ("0", "0"):
-            st.session_state.is_mobile = False
-            return False
-    except Exception:
-        pass
-    # Check session state
-    if st.session_state.get("is_mobile") is not None:
+    """Detect mobile: ONLY if explicitly toggled via button. Default = desktop."""
+    if "is_mobile" in st.session_state:
         return st.session_state.is_mobile
-    # Default: desktop
     return False
 
 
 def _render_mobile_toggle():
-    """Show a prominent toggle in the top-right of the page."""
+    """Show toggle — stored purely in session (no URL params)."""
     is_mobile = st.session_state.get("is_mobile", False)
     if is_mobile:
         if st.button("🖥 Desktop View", key="layout_toggle"):
             st.session_state.is_mobile = False
-            try: st.query_params["mobile"] = "0"
-            except: pass
             st.rerun()
     else:
         if st.button("📱 Mobile View", key="layout_toggle"):
             st.session_state.is_mobile = True
-            try: st.query_params["mobile"] = "1"
-            except: pass
             st.rerun()
 
 
