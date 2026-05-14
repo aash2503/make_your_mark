@@ -695,14 +695,18 @@ def _grade_submission(db: Database, class_id: int, assignment_id: int, student_i
                 subject=getattr(assignment, 'subject', 'english'),
             )
         except Exception as exc:
-            st.error(f"Grading failed for {student.name}: {exc}")
+            st.error(f"Gemini API error: {exc}")
             return
 
     st.subheader(f"Feedback — {student.name}")
     st.code(latex_result, language="latex")
 
     tex_file = OUTPUT_DIR / f"feedback_{student_id}_{assignment_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}.tex"
-    write_tex_file(tex_file, latex_result)
+    try:
+        write_tex_file(tex_file, latex_result)
+    except Exception as exc:
+        st.error(f"Failed to write LaTeX file: {exc}")
+        return
 
     pdf_file = _compile_with_fallback(tex_file, OUTPUT_DIR)
     pdf_path = None
@@ -710,13 +714,14 @@ def _grade_submission(db: Database, class_id: int, assignment_id: int, student_i
         st.success("PDF generated successfully.")
         with open(pdf_file, "rb") as f:
             st.download_button("Download feedback PDF", f, file_name=pdf_file.name, mime="application/pdf")
-        # Upload to cloud
         try:
             pdf_path = db.upload_pdf(pdf_file)
             st.caption(f"☁️ Saved to cloud: [Open]({pdf_path})")
-        except Exception:
+        except Exception as exc:
             pdf_path = str(pdf_file)
-            st.caption("⚠️ Could not upload PDF to cloud.")
+            st.caption(f"⚠️ Cloud upload failed: {exc}")
+    else:
+        st.warning("PDF could not be generated, but grading result is shown above.")
 
     db.add_feedback(
         student_id=student_id,
@@ -1301,7 +1306,6 @@ def main():
     if pending_all:
         st.divider()
         st.subheader(f"📋 Pending Grading — {total_pending} submission(s)")
-        # Grade all button at top
         if st.button("⚡ Grade ALL pending submissions", key="grade_all_top_main", type="primary"):
             for key, data in pending_all.items():
                 for sub in data['submissions']:
@@ -1311,19 +1315,17 @@ def main():
 
         for key, data in pending_all.items():
             st.markdown(f"**{data['title']}** — {len(data['submissions'])} pending")
-            # Per-submission cards in a compact grid
-            cols = st.columns(min(3, max(1, len(data['submissions']))))
-            for i, sub in enumerate(data['submissions']):
+            for sub in data['submissions']:
                 sname = sub.get("student_name", f"Student {sub['student_id']}")
                 text_len = len(sub.get('submission_text', ''))
-                with cols[i % len(cols)]:
-                    with st.container(border=True):
-                        st.caption(f"👤 {sname}")
-                        st.caption(f"📝 {text_len} chars")
-                        if st.button("Grade", key=f"gsub_{sub['id']}", use_container_width=True):
-                            _grade_submission(db, data['class_id'], data['assignment_id'], sub['student_id'], sub['submission_text'])
-                            db.mark_submission_graded(sub['id'])
-                            st.rerun()
+                c1, c2 = st.columns([4, 1])
+                with c1:
+                    st.caption(f"👤 {sname} — {text_len} chars")
+                with c2:
+                    if st.button("Grade", key=f"gsub_{sub['id']}"):
+                        _grade_submission(db, data['class_id'], data['assignment_id'], sub['student_id'], sub['submission_text'])
+                        db.mark_submission_graded(sub['id'])
+                        st.rerun()
             st.markdown("---")
 
     if not assignment_id:
