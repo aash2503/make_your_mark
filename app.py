@@ -264,7 +264,19 @@ def get_gemini_client() -> GeminiClient:
     )
 
 
-def inject_pwa_meta() -> None:
+def _persist_login(teacher_code: str):
+    """Store teacher code in URL params so login survives refresh."""
+    try:
+        st.query_params["tk"] = teacher_code
+    except Exception:
+        pass  # older Streamlit; login won't persist
+
+def _clear_persisted_login():
+    """Remove the persisted token from URL."""
+    try:
+        st.query_params.clear()
+    except Exception:
+        pass
     components.html(
         """
         <script>
@@ -349,6 +361,7 @@ def render_login(db: Database) -> None:
                     st.session_state.authenticated = True
                     st.session_state.teacher = teacher
                     st.session_state.needs_setup = not bool(teacher.get("setup_complete"))
+                    _persist_login(teacher["teacher_code"])
                     st.rerun()
                 else:
                     st.markdown("<p class='status-err'>Invalid teacher code.</p>", unsafe_allow_html=True)
@@ -376,6 +389,8 @@ def render_login(db: Database) -> None:
                         st.session_state.authenticated = True
                         st.session_state.teacher = teacher
                         st.session_state.needs_setup = not bool(teacher.get("setup_complete"))
+                        if teacher.get("teacher_code"):
+                            _persist_login(teacher["teacher_code"])
                         st.rerun()
                     else:
                         st.markdown("<p class='status-err'>Invalid email or password.</p>", unsafe_allow_html=True)
@@ -415,6 +430,7 @@ def render_login(db: Database) -> None:
                     st.session_state.teacher = teacher
                     st.session_state.needs_setup = True
                     st.session_state.new_teacher_code = teacher["teacher_code"]
+                    _persist_login(teacher["teacher_code"])
                     st.rerun()
 
 
@@ -890,6 +906,7 @@ def render_mobile(db: Database, teacher: dict, teacher_id: int):
     if st.button("Sign Out", key="mob_signout"):
         for k in ["authenticated", "teacher", "needs_setup", "setup_avatar", "new_teacher_code"]:
             st.session_state.pop(k, None)
+        _clear_persisted_login()
         st.rerun()
 
 
@@ -923,6 +940,20 @@ def _detect_mobile() -> bool:
 
 def main():
     db = get_database()
+
+    # ── Auto-login from persisted token ──
+    if not st.session_state.get("authenticated"):
+        try:
+            token = st.query_params.get("tk")
+            if token and isinstance(token, str) and len(token) >= 4:
+                teacher = db.get_teacher_by_code(token)
+                if teacher:
+                    st.session_state.authenticated = True
+                    st.session_state.teacher = teacher
+                    st.session_state.needs_setup = not bool(teacher.get("setup_complete"))
+                    st.rerun()
+        except Exception:
+            pass  # query params not available
 
     # ── Auth gate ──
     if not st.session_state.get("authenticated"):
@@ -961,6 +992,7 @@ def main():
     if st.sidebar.button("Sign Out", key="signout"):
         for k in ["authenticated", "teacher", "needs_setup", "setup_avatar", "new_teacher_code"]:
             st.session_state.pop(k, None)
+        _clear_persisted_login()
         st.rerun()
 
     # Show teacher code for cross-device access
