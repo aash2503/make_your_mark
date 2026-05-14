@@ -835,52 +835,39 @@ def render_mobile(db: Database, teacher: dict, teacher_id: int):
 
     selected_class = db.get_class(class_id)
 
-    # ── Section 2: Students ──
-    with st.expander("👥 Students", expanded=False):
-        new_student = st.text_input("Student name", key="mob_new_student", placeholder="e.g. Alice Tan")
-        if st.button("Add Student", key="mob_add_student") and new_student:
-            db.add_student(class_id, new_student)
-            st.rerun()
-        students = db.list_students(class_id)
-        if students:
-            st.write(pd.DataFrame([{"Name": s.name} for s in students], index=range(1, len(students)+1)))
-
-    # ── Section 3: Assignments (create on desktop, mobile just selects) ──
-    with st.expander("📝 Assignment", expanded=False):
+    # ── Section 2: Select assignment ──
+    with st.expander("📝 Assignment", expanded=not bool(assignments)):
         assignments = db.list_assignments(class_id)
         if not assignments:
-            st.info("Create an assignment on desktop first, then upload here.")
+            st.info("Create an assignment on desktop first.")
             return
         assignment_sel = st.selectbox("Active assignment", [a.title for a in assignments], key="mob_asm_sel")
         assignment_id = next(a.id for a in assignments if a.title == assignment_sel)
         assignment = db.get_assignment(assignment_id)
         st.caption(f"Subject: {getattr(assignment, 'subject', 'english').title()}")
 
-    # ── Section 4: Upload ──
-    student_sel = st.selectbox("Student", [s.name for s in students], key="mob_stu_sel") if students else None
-    student_id = next(s.id for s in students if s.name == student_sel) if student_sel else None
+    students = db.list_students(class_id)
 
-    if not student_id:
-        st.info("Select a student.")
-        return
-
+    # ── Section 3: Upload first, tag later ──
     st.markdown("---")
-    st.caption(f"📝 {assignment.title}  |  👤 {student_sel}")
+    st.caption(f"📝 {assignment.title}")
 
-    camera_photo = st.camera_input("Take photo", key=f"cam_{student_id}")
+    camera_photo = st.camera_input("Take photo of student's work", key="mob_cam")
     uploaded_files = st.file_uploader("Upload file(s)", type=["png","jpg","jpeg","pdf","txt"],
-                                       accept_multiple_files=True, key=f"mob_files_{student_id}")
-    raw_text = st.text_area("OR paste text", key=f"mob_text_{student_id}", height=100)
+                                       accept_multiple_files=True, key="mob_files_main")
+    raw_text = st.text_area("OR paste text", key="mob_text_main", height=100)
 
-    if st.button("Submit for Grading", key=f"mob_submit_{student_id}", type="primary", use_container_width=True):
+    # Extract text from uploads
+    if st.button("📤 Upload & Tag Student", key="mob_upload", type="primary", use_container_width=True):
         submission_text = raw_text.strip()
         if camera_photo and not submission_text:
             camera_photo.seek(0)
             try:
                 submission_text = get_gemini_client().extract_text_from_image(camera_photo.read(), "image/jpeg")
+                st.success("Text extracted from photo.")
             except Exception:
                 st.error("Could not read photo.")
-                return
+                st.stop()
         if uploaded_files and not submission_text:
             parts = []
             for i, f in enumerate(uploaded_files):
@@ -888,16 +875,32 @@ def render_mobile(db: Database, teacher: dict, teacher_id: int):
                 if txt:
                     parts.append(f"[Page {i+1}]\n{txt}")
             submission_text = "\n\n---\n\n".join(parts)
+
         if not submission_text:
-            st.error("No text found.")
-            return
-        try:
-            db.add_submission(student_id, assignment_id, submission_text)
-        except RuntimeError as exc:
-            st.error(str(exc))
-            return
-        st.success(f"✓ Uploaded! Grade on desktop. {db.get_pending_count(assignment_id)} pending.")
+            st.error("No text found. Take a photo, upload, or paste.")
+            st.stop()
+
+        # Store the extracted text temporarily and show student picker
+        st.session_state.mob_submission_text = submission_text
         st.rerun()
+
+    # ── Section 4: Tag to student (shown after upload) ──
+    if st.session_state.get("mob_submission_text"):
+        st.success("Text extracted! Now tag to a student:")
+        if not students:
+            st.info("No students in this class. Add students on desktop first.")
+        else:
+            student_sel = st.selectbox("Which student?", [s.name for s in students], key="mob_stu_tag")
+            student_id = next((s.id for s in students if s.name == student_sel), None)
+            if st.button("✅ Confirm & Submit", key="mob_confirm", type="primary", use_container_width=True):
+                try:
+                    db.add_submission(student_id, assignment_id, st.session_state.mob_submission_text)
+                except RuntimeError as exc:
+                    st.error(str(exc))
+                    st.stop()
+                st.session_state.pop("mob_submission_text", None)
+                st.success(f"✓ {student_sel}'s work uploaded! {db.get_pending_count(assignment_id)} pending.")
+                st.rerun()
 
     # ── Section 5: Pending status ──
     pending = db.get_pending_count(assignment_id)
@@ -914,31 +917,38 @@ def render_mobile(db: Database, teacher: dict, teacher_id: int):
 
 
 def _detect_mobile() -> bool:
-    """Detect mobile via query param + JS redirect for narrow screens."""
-    if st.session_state.get("is_mobile") is not None:
-        return st.session_state.is_mobile
-
-    # Check URL param (handle both old list-style and new string-style)
+    """Detect mobile: URL param, session toggle, or a visible switch."""
+    # Check URL param first
     try:
         raw = st.query_params.get("mobile")
+        if raw in ("1", "1"):
+            st.session_state.is_mobile = True
+            return True
+        if raw in ("0", "0"):
+            st.session_state.is_mobile = False
+            return False
     except Exception:
-        raw = None
-    if raw in ("1", ["1"]):
-        st.session_state.is_mobile = True
-        return True
-
-    # Inject JS to auto-detect and redirect
-    components.html(
-        """<script>
-        if (window.innerWidth < 768 && !window.location.search.includes('mobile=1')) {
-            var sep = window.location.search ? '&' : '?';
-            window.location.search += sep + 'mobile=1';
-        }
-        </script>""",
-        height=0, width=0,
-    )
-    st.session_state.is_mobile = False
+        pass
+    # Check session state
+    if st.session_state.get("is_mobile") is not None:
+        return st.session_state.is_mobile
+    # Default: desktop
     return False
+
+
+def _render_mobile_toggle():
+    """Show a toggle button in the main content area (visible on all layouts)."""
+    is_mobile = st.session_state.get("is_mobile", False)
+    label = "🖥 Switch to Desktop" if is_mobile else "📱 Switch to Mobile"
+    col1, col2, col3 = st.columns([3, 1, 3])
+    with col2:
+        if st.button(label, key="layout_toggle", use_container_width=True):
+            st.session_state.is_mobile = not is_mobile
+            try:
+                st.query_params["mobile"] = "0" if is_mobile else "1"
+            except Exception:
+                pass
+            st.rerun()
 
 
 def main():
@@ -973,6 +983,9 @@ def main():
     # ── Teacher info ──
     teacher = st.session_state.get("teacher", {})
     teacher_id = teacher.get("id") if isinstance(teacher, dict) else None
+
+    # ── Mobile toggle (always visible) ──
+    _render_mobile_toggle()
 
     # ── Mobile detection ──
     is_mobile = _detect_mobile()
