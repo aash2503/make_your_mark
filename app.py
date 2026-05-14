@@ -709,14 +709,6 @@ def _grade_submission(db: Database, class_id: int, assignment_id: int, student_i
     st.subheader(f"Feedback — {student.name}")
     st.code(latex_result, language="latex")
 
-    # Store in session so it persists across reruns
-    st.session_state.setdefault("grade_results", {})
-    st.session_state.grade_results[f"{student_id}_{assignment_id}"] = {
-        "student_name": student.name,
-        "latex": latex_result,
-        "tex_file": str(tex_file),
-    }
-
     tex_file = OUTPUT_DIR / f"feedback_{student_id}_{assignment_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}.tex"
     try:
         write_tex_file(tex_file, latex_result)
