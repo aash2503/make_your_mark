@@ -937,17 +937,19 @@ def _detect_mobile() -> bool:
 
 
 def _render_mobile_toggle():
-    """Show a toggle button in the main content area (visible on all layouts)."""
+    """Show a prominent toggle in the top-right of the page."""
     is_mobile = st.session_state.get("is_mobile", False)
-    label = "🖥 Switch to Desktop" if is_mobile else "📱 Switch to Mobile"
-    col1, col2, col3 = st.columns([3, 1, 3])
-    with col2:
-        if st.button(label, key="layout_toggle", use_container_width=True):
-            st.session_state.is_mobile = not is_mobile
-            try:
-                st.query_params["mobile"] = "0" if is_mobile else "1"
-            except Exception:
-                pass
+    if is_mobile:
+        if st.button("🖥 Desktop View", key="layout_toggle"):
+            st.session_state.is_mobile = False
+            try: st.query_params["mobile"] = "0"
+            except: pass
+            st.rerun()
+    else:
+        if st.button("📱 Mobile View", key="layout_toggle"):
+            st.session_state.is_mobile = True
+            try: st.query_params["mobile"] = "1"
+            except: pass
             st.rerun()
 
 
