@@ -1302,20 +1302,23 @@ def main():
         with st.expander(f"📋 Pending Grading — {total_pending} submission(s)", expanded=True):
             for key, data in pending_all.items():
                 st.markdown(f"**{data['title']}** ({len(data['submissions'])} pending)")
-                names = [s.get("student_name", f"Student {s['student_id']}") for s in data['submissions']]
-                st.caption(", ".join(names[:10]) + ("..." if len(names) > 10 else ""))
-                c1, c2 = st.columns(2)
-                with c1:
-                    if st.button(f"Grade all in {data['title']}", key=f"grade_{data['assignment_id']}"):
-                        for sub in data['submissions']:
+                # Per-submission grade buttons
+                for sub in data['submissions']:
+                    sname = sub.get("student_name", f"Student {sub['student_id']}")
+                    scol1, scol2 = st.columns([4, 1])
+                    with scol1:
+                        st.caption(f"👤 {sname} — {len(sub.get('submission_text',''))} chars")
+                    with scol2:
+                        if st.button("Grade", key=f"grade_sub_{sub['id']}"):
                             _grade_submission(db, data['class_id'], data['assignment_id'], sub['student_id'], sub['submission_text'])
                             db.mark_submission_graded(sub['id'])
-                        st.rerun()
-                with c2:
-                    if st.button(f"Clear queue", key=f"clear_{data['assignment_id']}"):
-                        for sub in data['submissions']:
-                            db.mark_submission_graded(sub['id'])
-                        st.rerun()
+                            st.rerun()
+                # Grade all for this assignment
+                if st.button(f"⚡ Grade all {len(data['submissions'])} in {data['title']}", key=f"grade_all_{data['assignment_id']}"):
+                    for sub in data['submissions']:
+                        _grade_submission(db, data['class_id'], data['assignment_id'], sub['student_id'], sub['submission_text'])
+                        db.mark_submission_graded(sub['id'])
+                    st.rerun()
             st.divider()
 
     if not assignment_id:
