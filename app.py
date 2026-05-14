@@ -126,8 +126,7 @@ def inject_css() -> None:
 
         /* ── Inputs ── */
         .stTextInput>div>div>input,
-        .stTextArea>div>div>textarea,
-        .stSelectbox>div>div>div {{
+        .stTextArea>div>div>textarea {{
             background: {_C['input_bg']} !important;
             color: {_C['text']} !important;
             border: 2px solid {_C['border']} !important;
@@ -139,6 +138,15 @@ def inject_css() -> None:
         .stTextArea>div>div>textarea:focus {{
             border-color: {_C['amber']} !important;
             box-shadow: 0 0 0 3px rgba(245,158,11,0.25), 0 4px 0 rgba(245,158,11,0.15) !important;
+        }}
+
+        /* Selectbox — lighter touch, no padding that breaks text */
+        [data-baseweb="select"] {{
+            background: {_C['input_bg']} !important;
+            color: {_C['text']} !important;
+            border: 2px solid {_C['border']} !important;
+            border-radius: 14px !important;
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace !important;
         }}
 
         .stFileUploader>div>label {{
