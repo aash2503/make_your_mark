@@ -56,28 +56,34 @@ def compile_latex(tex_path: Path, output_dir: Path) -> Path:
 
 
 def compile_latex_online(tex_path: Path, output_dir: Path) -> Path:
-    """Fallback: compile LaTeX via a free online API when pdflatex is unavailable."""
+    """Fallback: compile LaTeX via free online APIs when pdflatex is unavailable."""
     output_dir.mkdir(parents=True, exist_ok=True)
     pdf_path = output_dir / tex_path.with_suffix(".pdf").name
 
     with open(tex_path, "rb") as f:
-        response = requests.post(
-            "https://latexonline.cc/compile",
-            files={"file": (tex_path.name, f, "application/x-tex")},
-            timeout=60,
-        )
+        tex_data = f.read()
 
-    if response.status_code != 200:
-        raise RuntimeError(
-            f"Online LaTeX compilation failed (HTTP {response.status_code}). "
-            f"Response: {response.text[:500]}"
-        )
+    # Try multiple endpoints
+    endpoints = [
+        ("https://latexonline.cc/data", {"file": (tex_path.name, tex_data, "application/x-tex")}),
+        ("https://texlive.net/compile", {"file": (tex_path.name, tex_data, "application/x-tex")}),
+    ]
 
-    pdf_path.write_bytes(response.content)
-    if not pdf_path.exists() or pdf_path.stat().st_size < 100:
-        raise RuntimeError("Online LaTeX compilation returned an empty or invalid PDF.")
+    last_error = None
+    for url, files in endpoints:
+        try:
+            response = requests.post(url, files=files, timeout=90)
+            if response.status_code == 200 and len(response.content) > 100:
+                pdf_path.write_bytes(response.content)
+                return pdf_path
+            last_error = f"HTTP {response.status_code}: {response.text[:200]}"
+        except Exception as exc:
+            last_error = str(exc)
 
-    return pdf_path
+    raise RuntimeError(
+        f"All online LaTeX compilers failed. Last error: {last_error}. "
+        f"Copy the LaTeX source to Overleaf (https://overleaf.com) or install texlive."
+    )
 
 
 def merge_pdfs(paths: List[str], output_path: Path) -> None:
