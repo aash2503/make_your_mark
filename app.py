@@ -1096,15 +1096,16 @@ def main():
         if assignments:
             st.caption(f"{len(assignments)} assignment(s) — showing 3 most recent")
             st.write(pd.DataFrame([{"ID": a.id, "Title": a.title, "Subject": getattr(a,'subject','')} for a in assignments]))
-            # Archive button for current assignment
-            if assignment_id:
-                if st.button("📦 Archive this assignment", key="archive_asm"):
-                    db.archive_assignment(assignment_id)
-                    st.rerun()
 
     assignment_options = {a.title: a.id for a in assignments}
     selected_assignment_title = st.sidebar.selectbox("Select Assignment", ["Choose an assignment"] + list(assignment_options.keys()), key="selected_assignment")
     assignment_id = assignment_options.get(selected_assignment_title)
+
+    # Archive button for selected assignment
+    if assignment_id:
+        if st.sidebar.button("📦 Archive this assignment", key="archive_asm"):
+            db.archive_assignment(assignment_id)
+            st.rerun()
 
     student_options = {s.name: s.id for s in students}
     selected_student_name = st.sidebar.selectbox("Select Student", ["Choose a student"] + list(student_options.keys()), key="selected_student")
