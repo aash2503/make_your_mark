@@ -11,7 +11,9 @@ def _subject_prompt(subject: str) -> str:
     base = (
         f"SYSTEM PERSONA: {subject.upper()} PRIMARY SCHOOL TEACHER'S ASSISTANT (TA).\n"
         f"Objective: Grade student responses with precision, provide structured pedagogical feedback, "
-        f"and adhere strictly to MOE primary-level marking rubrics. Do NOT give sympathy marks.\n\n"
+        f"and adhere strictly to MOE primary-level marking rubrics. Do NOT give sympathy marks.\n"
+        f"Respond in raw LaTeX only, using xcolor and tcolorbox. "
+        f"Do not provide explanation outside the LaTeX document.\n\n"
     )
     if subject.lower() == "english":
         return base + (
@@ -46,13 +48,14 @@ def _subject_prompt(subject: str) -> str:
         return base + (
             "Mark the student's work according to the provided rubric and answer key.\n"
             "Provide structured feedback with Glows (strengths), Grows (improvements), and Action Items.\n"
-        ) + "Respond in raw LaTeX only, using xcolor and tcolorbox. Do not provide explanation outside the LaTeX document."
+        )
 
 # Default ranked model list — first choice is tried first, then fallback
 DEFAULT_MODEL_RANK = [
+    "gemini-3.1-pro",
     "gemini-2.5-pro",
+    "gemini-3.1-flash-lite",
     "gemini-2.5-flash",
-    "gemini-2.0-flash",
 ]
 
 # Errors that should trigger a fallback (rate limiting, overloaded, etc.)
@@ -63,6 +66,8 @@ _FALLBACK_ERRORS = (
     "UNAVAILABLE",        # Temporarily unavailable
     "INTERNAL",           # Internal server error
     "DEADLINE_EXCEEDED",  # Timeout
+    "NOT_FOUND",          # Model not available in this region/account
+    "INVALID_ARGUMENT",   # Model name not recognized
 )
 
 
