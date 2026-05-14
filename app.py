@@ -277,6 +277,9 @@ def _clear_persisted_login():
         st.query_params.clear()
     except Exception:
         pass
+
+
+def inject_pwa_meta() -> None:
     components.html(
         """
         <script>
