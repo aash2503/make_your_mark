@@ -1072,9 +1072,11 @@ def main():
         render_mobile(db, teacher, teacher_id)
         return
 
-    # ── Sidebar: minimal — just identity + sign out ──
+    # ── Sidebar + main area sidebar-toggle ──
     avatar = teacher.get("avatar", "🧑‍🏫") if isinstance(teacher, dict) else "🧑‍🏫"
     name = teacher.get("display_name", "Teacher") if isinstance(teacher, dict) else "Teacher"
+
+    # Sidebar identity
     with st.sidebar:
         st.markdown(f"### {avatar} {name}")
         if st.button("Sign Out", key="signout"):
@@ -1082,7 +1084,6 @@ def main():
                 st.session_state.pop(k, None)
             _clear_persisted_login()
             st.rerun()
-
         teacher_code = teacher.get("teacher_code", "")
         if teacher_code:
             st.caption(f"Code: **{teacher_code}**")
@@ -1093,8 +1094,8 @@ def main():
             st.session_state.is_mobile = True
             st.rerun()
 
-    # ── Main area: class management as expander ──
-    with st.expander("📚 Classes & Students", expanded=True):
+    # Main area: collapsible sidebar proxy
+    with st.expander("☰ Menu — Classes, Students & Assignments", expanded=True):
         classes = db.list_classes(teacher_id=teacher_id)
 
         col_new, col_rest = st.columns([2, 1])
