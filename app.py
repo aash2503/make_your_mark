@@ -1154,6 +1154,33 @@ def main():
     selected_student_name = st.sidebar.selectbox("Select Student", ["Choose a student"] + list(student_options.keys()), key="selected_student")
     student_id = student_options.get(selected_student_name)
 
+    # ── Pending grading dashboard ──
+    pending_all = db.list_all_pending(teacher_id)
+    if pending_all:
+        total_pending = sum(len(v["submissions"]) for v in pending_all.values())
+        with st.expander(f"📋 Pending Grading — {total_pending} submission(s)", expanded=True):
+            for key, data in pending_all.items():
+                st.markdown(f"**{data['title']}** ({len(data['submissions'])} pending)")
+                names = [s.get("student_name", f"Student {s['student_id']}") for s in data['submissions']]
+                st.caption(", ".join(names[:10]) + ("..." if len(names) > 10 else ""))
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button(f"Grade all in {data['title']}", key=f"grade_{data['assignment_id']}"):
+                        for sub in data['submissions']:
+                            _grade_submission(db, data['class_id'], data['assignment_id'],
+                                            sub['student_id'], sub['submission_text'])
+                            db.mark_submission_graded(sub['id'])
+                        st.rerun()
+                with col2:
+                    if st.button(f"Clear queue", key=f"clear_{data['assignment_id']}"):
+                        for sub in data['submissions']:
+                            db.mark_submission_graded(sub['id'])
+                        st.rerun()
+            st.markdown("---")
+    else:
+        # Show smaller pending indicator if any exist for current assignment
+        pass
+
     st.markdown("<div class='main-title'>MY-Mark Dashboard</div>", unsafe_allow_html=True)
     st.markdown("<p class='subheader-text'>Select an assignment and student to grade work, review past feedback, and produce PDF reports.</p>", unsafe_allow_html=True)
 

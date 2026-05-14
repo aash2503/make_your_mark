@@ -51,6 +51,7 @@ class Submission:
     status: str
     created_at: str
     file_paths: str = "[]"
+    student_name: str = ""
 
 
 @dataclass
@@ -370,6 +371,40 @@ class Database:
         result = self.client.table("submissions").select("id", count="exact") \
             .eq("assignment_id", assignment_id).eq("status", "pending").execute()
         return result.count or 0
+
+    def list_all_pending(self, teacher_id: int) -> dict:
+        """Return all pending submissions across all classes for a teacher."""
+        if not self._submission_table_ready():
+            return {}
+        # Get all class IDs for this teacher
+        classes = self.list_classes(teacher_id=teacher_id)
+        if not classes:
+            return {}
+        class_ids = [c.id for c in classes]
+        # Get pending submissions with assignment + student info
+        result = self.client.table("submissions").select(
+            "*, students!inner(name, class_id), assignments!inner(title, class_id)"
+        ).eq("status", "pending").in_("students.class_id", class_ids).order("created_at").execute()
+        pending = {}
+        for row in (result.data or []):
+            data = self._row_to_dict(row)
+            student = data.pop("students", {}) or {}
+            assignment = data.pop("assignments", {}) or {}
+            # Skip submissions for classes not belonging to this teacher
+            cls_id = assignment.get("class_id") if isinstance(assignment, dict) else None
+            if cls_id not in class_ids:
+                continue
+            asm_title = assignment.get("title", "Unknown") if isinstance(assignment, dict) else "Unknown"
+            key = f"{cls_id}:{data['assignment_id']}:{asm_title}"
+            if key not in pending:
+                pending[key] = {"class_id": cls_id, "assignment_id": data["assignment_id"],
+                               "title": asm_title, "submissions": []}
+            data["student_name"] = student.get("name", "") if isinstance(student, dict) else ""
+            if isinstance(data.get("file_paths"), str):
+                try: data["file_paths"] = json.loads(data["file_paths"])
+                except: pass
+            pending[key]["submissions"].append(data)
+        return pending
 
     # ── PDF Storage ───────────────────────────────────────────────────────────
 
