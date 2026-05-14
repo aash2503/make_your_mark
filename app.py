@@ -721,7 +721,8 @@ def _grade_submission(db: Database, class_id: int, assignment_id: int, student_i
     if pdf_file:
         st.success("PDF generated successfully.")
         with open(pdf_file, "rb") as f:
-            st.download_button("Download feedback PDF", f, file_name=pdf_file.name, mime="application/pdf")
+            st.download_button("⬇ Download Feedback PDF", f, file_name=f"{student.name}_{assignment.title}.pdf",
+                               key=f"dl_{student_id}_{assignment_id}", mime="application/pdf")
         try:
             pdf_path = db.upload_pdf(pdf_file)
             st.caption(f"☁️ Saved to cloud: [Open]({pdf_path})")
@@ -729,7 +730,16 @@ def _grade_submission(db: Database, class_id: int, assignment_id: int, student_i
             pdf_path = str(pdf_file)
             st.caption(f"⚠️ Cloud upload failed: {exc}")
     else:
-        st.warning("PDF could not be generated, but grading result is shown above.")
+        st.warning("PDF could not be generated, but LaTeX code is shown above — copy to Overleaf.")
+
+    # Persist result in session state
+    st.session_state.setdefault("graded", {})
+    st.session_state.graded[f"{student_id}_{assignment_id}"] = {
+        "student_name": student.name,
+        "latex": latex_result,
+        "pdf_path": pdf_path,
+        "assignment_title": assignment.title,
+    }
 
     db.add_feedback(
         student_id=student_id,
@@ -820,7 +830,17 @@ def render_class_report(db: Database, class_id: int, assignment_id: int):
 
         st.success("Class report PDF generated successfully.")
         with open(pdf_file, "rb") as f:
-            st.download_button("Download class report PDF", f, file_name=pdf_file.name, mime="application/pdf")
+            st.download_button("⬇ Download Class Report PDF", f, file_name=f"{selected_class.name}_{assignment.title}_report.pdf",
+                               key="dl_class_report", mime="application/pdf")
+
+        # Persist in session
+        st.session_state.setdefault("graded", {})
+        st.session_state.graded["class_report"] = {
+            "student_name": f"Class Report — {selected_class.name}",
+            "latex": report_tex,
+            "pdf_path": str(pdf_file),
+            "assignment_title": f"{assignment.title} Report",
+        }
 
         # Upload to cloud for cross-device access
         try:
@@ -1276,6 +1296,28 @@ def main():
         if st.button("🏠 Home", key="back_home_desk"):
             st.session_state.app_mode = None
             st.rerun()
+
+    # ── Persistent grading results ──
+    graded = st.session_state.get("graded", {})
+    if graded:
+        with st.expander(f"📄 Latest Graded Results — {len(graded)} result(s)", expanded=True):
+            for key, gr in graded.items():
+                c1, c2, c3 = st.columns([2, 1, 1])
+                with c1:
+                    st.caption(f"📎 {gr['student_name']} — {gr.get('assignment_title','')}")
+                with c2:
+                    st.code(gr.get("latex","")[:200] + "..." if len(gr.get("latex","")) > 200 else gr.get("latex",""), language="latex")
+                with c3:
+                    pdf = gr.get("pdf_path")
+                    if pdf and str(pdf).startswith("http"):
+                        st.markdown(f"[Open PDF]({pdf})", unsafe_allow_html=True)
+                    elif pdf and Path(pdf).exists():
+                        with open(pdf, "rb") as pf:
+                            st.download_button("⬇ Download", pf, file_name=f"{gr['student_name']}.pdf", key=f"persist_{key}", mime="application/pdf")
+            if st.button("Clear Results", key="clear_graded"):
+                st.session_state.pop("graded", None)
+                st.rerun()
+        st.divider()
 
     pending_all = db.list_all_pending(teacher_id)
     total_pending = sum(len(v["submissions"]) for v in pending_all.values()) if pending_all else 0
