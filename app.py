@@ -917,21 +917,37 @@ def render_mobile(db: Database, teacher: dict, teacher_id: int):
 
     if st.button("📤 Extract & Tag Student", key=f"mob_upload_{assignment_id}", type="primary", use_container_width=True):
         submission_text = raw_text.strip()
+        extracted = False
+
         if camera_photo and not submission_text:
-            camera_photo.seek(0)
             try:
+                camera_photo.seek(0)
                 submission_text = get_gemini_client().extract_text_from_image(camera_photo.read(), "image/jpeg")
-            except Exception:
-                st.error("Could not read photo.")
-                st.stop()
+                if submission_text and submission_text.strip():
+                    extracted = True
+                    st.session_state.mob_submission_text = submission_text
+                else:
+                    st.error("Photo was blank or unreadable. Please try again or paste text.")
+            except Exception as exc:
+                st.error(f"Could not read photo: {exc}")
+
         if uploaded_files and not submission_text:
-            parts = [f"[Page {i+1}]\n{extract_submission_text(f)}" for i, f in enumerate(uploaded_files) if extract_submission_text(f)]
+            parts = []
+            for i, f in enumerate(uploaded_files):
+                txt = extract_submission_text(f)
+                if txt:
+                    parts.append(f"[Page {i+1}]\n{txt}")
             submission_text = "\n\n---\n\n".join(parts)
-        if not submission_text:
-            st.error("No text found. Take a photo, upload, or paste.")
-            st.stop()
-        st.session_state.mob_submission_text = submission_text
-        st.rerun()
+            if submission_text.strip():
+                st.session_state.mob_submission_text = submission_text
+
+        if not submission_text or not submission_text.strip():
+            st.error("No text found. Take a clearer photo, upload a file, or paste text below.")
+        elif not extracted and uploaded_files:
+            st.session_state.mob_submission_text = submission_text
+
+        if st.session_state.get("mob_submission_text"):
+            st.rerun()
 
     # ── Tag to student ──
     if st.session_state.get("mob_submission_text"):
