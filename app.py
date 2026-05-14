@@ -249,8 +249,6 @@ def inject_css() -> None:
     inject_pwa_meta()
 
 @st.cache_resource
-
-@st.cache_resource
 def get_database() -> Database:
     return Database(
         url=os.environ.get("SUPABASE_URL") or st.secrets.get("SUPABASE_URL", ""),
@@ -494,14 +492,24 @@ def render_account_setup(db: Database) -> None:
         avatars = ["🧑‍🏫", "👩‍🏫", "👨‍🏫", "🦉", "📚", "✏️", "🎓", "⭐"]
         selected_avatar = st.session_state.get("setup_avatar", avatars[0])
 
-        # Render avatar chips as radio via columns
-        avatar_cols = st.columns(len(avatars))
-        for i, (av, acol) in enumerate(zip(avatars, avatar_cols)):
-            with acol:
-                label = f"{'✓ ' if av == selected_avatar else ''}{av}"
-                if st.button(label, key=f"av_{i}"):
-                    st.session_state.setup_avatar = av
-                    st.rerun()
+        # Responsive 4-column grid that wraps cleanly on mobile
+        cols_per_row = 4
+        for row_start in range(0, len(avatars), cols_per_row):
+            row_avatars = avatars[row_start:row_start + cols_per_row]
+            avatar_cols = st.columns(len(row_avatars))
+            for i, (av, acol) in enumerate(zip(row_avatars, avatar_cols)):
+                with acol:
+                    if av == selected_avatar:
+                        st.markdown(
+                            f"<div style='width:48px;height:48px;display:flex;align-items:center;justify-content:center;"
+                            f"font-size:1.5rem;border:2px solid {_C['amber']};border-radius:14px;"
+                            f"background:{_C['amber']}22;cursor:default'>✓</div>",
+                            unsafe_allow_html=True
+                        )
+                    else:
+                        if st.button(av, key=f"av_{row_start + i}"):
+                            st.session_state.setup_avatar = av
+                            st.rerun()
 
         st.markdown("<br>", unsafe_allow_html=True)
 
@@ -555,44 +563,65 @@ def _compile_with_fallback(tex_path: Path, output_dir: Path) -> Path | None:
 
 def extract_submission_text(uploaded_file) -> str:
     if uploaded_file.type.startswith("image/"):
-        # Try tesseract first
-        try:
-            image = Image.open(uploaded_file)
-            text = image_to_string(image, lang="eng")
-            if text.strip():
-                return text.strip()
-        except Exception:
-            pass
-
-        # Fallback: Gemini Vision OCR
-        try:
-            uploaded_file.seek(0)
-            image_bytes = uploaded_file.read()
-            mime = uploaded_file.type or "image/png"
-            gemini = get_gemini_client()
-            with st.spinner("Tesseract unavailable — using Gemini Vision for OCR..."):
-                text = gemini.extract_text_from_image(image_bytes, mime)
-            if text.strip():
-                st.caption("📷 Text extracted via Gemini Vision")
-                return text.strip()
-        except Exception:
-            st.error("OCR failed — both Tesseract and Gemini Vision are unavailable. Please paste text directly.")
-            return ""
-
-        st.error("No text could be extracted from the image. Please paste text directly.")
-        return ""
+        return _ocr_image(uploaded_file)
 
     if uploaded_file.type == "text/plain":
         return uploaded_file.read().decode("utf-8")
 
     if uploaded_file.type == "application/pdf":
+        # Try text extraction first
         reader = PdfReader(uploaded_file)
-        text = []
+        text_parts = []
         for page in reader.pages:
             page_text = page.extract_text() or ""
-            text.append(page_text)
-        return "\n".join(text).strip()
+            text_parts.append(page_text)
+        text = "\n".join(text_parts).strip()
+        if text:
+            return text
+        # Image-only PDF → Gemini Vision
+        mime = "application/pdf"
+        # Rely on Gemini's native PDF ingestion
+        uploaded_file.seek(0)
+        pdf_bytes = uploaded_file.read()
+        try:
+            gemini = get_gemini_client()
+            with st.spinner("PDF is image-only — using Gemini Vision..."):
+                text = gemini.extract_text_from_image(pdf_bytes, mime)
+            if text.strip():
+                st.caption("📷 Text extracted from PDF via Gemini Vision")
+                return text.strip()
+        except Exception:
+            pass
+        st.error("Could not extract text from PDF. Try uploading individual page images instead.")
+        return ""
 
+    return ""
+
+
+def _ocr_image(uploaded_file) -> str:
+    """Extract text from an image using Tesseract → Gemini Vision fallback."""
+    try:
+        image = Image.open(uploaded_file)
+        text = image_to_string(image, lang="eng")
+        if text.strip():
+            return text.strip()
+    except Exception:
+        pass
+
+    uploaded_file.seek(0)
+    image_bytes = uploaded_file.read()
+    mime = uploaded_file.type or "image/png"
+    try:
+        gemini = get_gemini_client()
+        with st.spinner("Tesseract unavailable — using Gemini Vision..."):
+            text = gemini.extract_text_from_image(image_bytes, mime)
+        if text.strip():
+            st.caption("📷 Text extracted via Gemini Vision")
+            return text.strip()
+    except Exception:
+        pass
+
+    st.error("OCR failed — please paste text directly.")
     return ""
 
 
@@ -787,13 +816,26 @@ def render_class_report(db: Database, class_id: int, assignment_id: int):
         except Exception:
             st.caption("⚠️ Could not upload report to cloud storage.")
 
-        # Merge local PDFs (skips cloud URLs — download individual PDFs instead)
-        student_pdf_paths = [
-            row.feedback_pdf_path for row in feedback_rows
-            if row.feedback_pdf_path
-            and not str(row.feedback_pdf_path).startswith("http")
-            and Path(row.feedback_pdf_path).exists()
-        ]
+        # Merge all PDFs — download cloud ones first
+        student_pdf_paths = []
+        for row in feedback_rows:
+            path = row.feedback_pdf_path
+            if not path:
+                continue
+            if str(path).startswith("http"):
+                # Download from Supabase to a temp file
+                try:
+                    import tempfile
+                    file_name = str(path).split("/")[-1].split("?")[0] or "feedback.pdf"
+                    tmp = Path(tempfile.gettempdir()) / f"mymark_{file_name}"
+                    resp = __import__("requests").get(str(path), timeout=30)
+                    if resp.status_code == 200:
+                        tmp.write_bytes(resp.content)
+                        student_pdf_paths.append(str(tmp))
+                except Exception:
+                    pass
+            elif Path(path).exists():
+                student_pdf_paths.append(path)
         if student_pdf_paths:
             merged_path = OUTPUT_DIR / f"merged_{class_id}_{assignment_id}.pdf"
             merge_pdfs(student_pdf_paths, merged_path)
@@ -943,15 +985,19 @@ def main():
     if not st.session_state.get("authenticated"):
         try:
             token = st.query_params.get("tk")
-            if token and isinstance(token, str) and len(token) >= 4:
+        except Exception:
+            token = None
+        if token and isinstance(token, str) and len(token) >= 4:
+            try:
                 teacher = db.get_teacher_by_code(token)
                 if teacher:
                     st.session_state.authenticated = True
                     st.session_state.teacher = teacher
                     st.session_state.needs_setup = not bool(teacher.get("setup_complete"))
+                    st.toast(f"👋 Welcome back, {teacher.get('display_name', 'Teacher')}!", icon="🔐")
                     st.rerun()
-        except Exception:
-            pass  # query params not available
+            except Exception:
+                pass
 
     # ── Auth gate ──
     if not st.session_state.get("authenticated"):
