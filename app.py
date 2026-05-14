@@ -1094,159 +1094,129 @@ def main():
             st.session_state.is_mobile = True
             st.rerun()
 
-    # Main area: collapsible sidebar proxy
-    with st.expander("☰ Menu — Classes, Students & Assignments", expanded=True):
-        classes = db.list_classes(teacher_id=teacher_id)
-
-        col_new, col_rest = st.columns([2, 1])
-        with col_new:
-            new_class_name = st.text_input("New class", key="new_class_name", placeholder="Class name")
-            if st.button("Add Class", key="add_class") and new_class_name:
-                try:
-                    db.add_class(new_class_name, teacher_id=teacher_id)
-                    st.rerun()
-                except ValueError as exc:
-                    st.error(str(exc))
-
-        if classes:
-            st.caption(f"**{len(classes)} class(es)**")
-            class_options = {c.name: c.id for c in classes}
-            selected_class_name = st.selectbox(
-                "Select Class", ["Choose a class"] + list(class_options.keys()),
-                key="selected_class"
-            )
-            class_id = class_options.get(selected_class_name)
-        else:
-            class_id = None
-            st.info("Create a class to begin.")
-            return
-
-        if not class_id:
-            return
-
-        selected_class = db.get_class(class_id)
-
-        # Students
-        col_stu, col_stu_list = st.columns([2, 1])
-        with col_stu:
-            new_student_name = st.text_input("Student name", key="new_student_name", placeholder="e.g. Alice Tan")
-            if st.button("Add Student", key="add_student") and new_student_name:
-                db.add_student(class_id, new_student_name)
+        st.divider()
+        st.caption("⚙️ CLASS ADMIN")
+        new_class_name = st.text_input("New class", key="new_class_name", placeholder="Class name")
+        if st.button("Add Class", key="add_class") and new_class_name:
+            try:
+                db.add_class(new_class_name, teacher_id=teacher_id)
                 st.rerun()
-        students = db.list_students(class_id)
-        if students:
-            with col_stu_list:
-                st.caption(f"**{len(students)} student(s)**")
+            except ValueError as exc:
+                st.error(str(exc))
 
-    # ── Main area: assignment creation ──
-    if class_id:
-        with st.expander("📝 Assignments", expanded=True):
-            _render_assignment_form(db, class_id)
-            assignments = db.list_assignments(class_id)
-            assignment_options = {a.title: a.id for a in assignments}
-            selected_assignment_title = st.selectbox(
-                "Select Assignment", ["Choose an assignment"] + list(assignment_options.keys()),
-                key="selected_assignment"
-            )
-            assignment_id = assignment_options.get(selected_assignment_title)
+    # ── Landing page ──
+    st.markdown("<div class='main-title'>MY-Mark Dashboard</div>", unsafe_allow_html=True)
 
-            if assignment_id:
-                if st.button("📦 Archive this assignment", key="archive_asm"):
-                    db.archive_assignment(assignment_id)
-                    st.rerun()
-    else:
-        assignment_id = None
-
-    student_options = {s.name: s.id for s in students} if class_id else {}
-    selected_student_name = st.selectbox("Select Student", ["Choose a student"] + list(student_options.keys()),
-                                         key="selected_student")
-    student_id = student_options.get(selected_student_name)
-
-    # ── Pending grading dashboard ──
     pending_all = db.list_all_pending(teacher_id)
+    total_pending = sum(len(v["submissions"]) for v in pending_all.values()) if pending_all else 0
+    if total_pending:
+        st.warning(f"📋 **{total_pending} submission(s) pending grading** — uploaded from mobile, ready for review.")
+
+    classes = db.list_classes(teacher_id=teacher_id)
+    if not classes:
+        st.info("👋 Welcome! Create your first class in the sidebar to begin.")
+        return
+
+    class_options = {c.name: c.id for c in classes}
+    selected_class_name = st.selectbox("Active Class", list(class_options.keys()), key="selected_class")
+    class_id = class_options.get(selected_class_name)
+    if not class_id:
+        return
+    selected_class = db.get_class(class_id)
+    students = db.list_students(class_id)
+    assignments = db.list_assignments(class_id)
+
+    dash_left, dash_right = st.columns([3, 2])
+
+    with dash_left:
+        with st.container(border=True):
+            st.subheader(f"📚 {selected_class.name}")
+            st.caption(f"**{len(students)} student(s)** · **{len(assignments)} assignment(s)**")
+            if students:
+                student_names = [s.name for s in students]
+                st.caption("Students: " + ", ".join(student_names[:8]) + ("..." if len(student_names) > 8 else ""))
+            else:
+                st.caption("No students yet — add below")
+            col_add_stu, _ = st.columns([2, 1])
+            with col_add_stu:
+                new_student_name = st.text_input("Add student", key="ds_new_student", placeholder="Student name", label_visibility="collapsed")
+                if st.button("+ Add", key="ds_add_student") and new_student_name:
+                    db.add_student(class_id, new_student_name)
+                    st.rerun()
+            if students:
+                student_options = {s.name: s.id for s in students}
+                selected_student_name = st.selectbox("Selected Student", list(student_options.keys()), key="selected_student")
+                student_id = student_options.get(selected_student_name)
+            else:
+                student_id = None
+            with st.popover("⚙️ Manage Class"):
+                new_name = st.text_input("Rename", value=selected_class_name, key="ds_rename")
+                if st.button("Rename Class", key="ds_do_rename") and new_name != selected_class_name:
+                    try:
+                        db.rename_class(class_id, new_name)
+                        st.rerun()
+                    except ValueError as exc:
+                        st.error(str(exc))
+                if st.button("🗑 Delete Class", key="ds_delete", type="secondary"):
+                    db.delete_class(class_id)
+                    st.session_state.selected_class = "Choose a class"
+                    st.rerun()
+
+    with dash_right:
+        with st.container(border=True):
+            st.subheader("📝 Assignments")
+            if assignments:
+                assignment_options = {a.title: a.id for a in assignments}
+                selected_assignment_title = st.selectbox("Active", list(assignment_options.keys()), key="selected_assignment", label_visibility="collapsed")
+                assignment_id = assignment_options.get(selected_assignment_title)
+                if assignment_id:
+                    asm = db.get_assignment(assignment_id)
+                    st.caption(f"Subject: **{getattr(asm, 'subject', 'english').title()}**")
+                    drafts = db.get_feedback_history(student_id, assignment_id) if student_id else []
+                    if drafts:
+                        st.caption(f"📄 {len(drafts)} draft(s)")
+                    col_archive, _ = st.columns([1, 1])
+                    with col_archive:
+                        if st.button("📦 Archive", key="ds_archive"):
+                            db.archive_assignment(assignment_id)
+                            st.rerun()
+            else:
+                assignment_id = None
+                st.caption("No assignments yet")
+            with st.popover("➕ New Assignment"):
+                _render_assignment_form(db, class_id)
+                st.rerun()
+
+    # ── Pending grading ──
     if pending_all:
-        total_pending = sum(len(v["submissions"]) for v in pending_all.values())
         with st.expander(f"📋 Pending Grading — {total_pending} submission(s)", expanded=True):
             for key, data in pending_all.items():
                 st.markdown(f"**{data['title']}** ({len(data['submissions'])} pending)")
                 names = [s.get("student_name", f"Student {s['student_id']}") for s in data['submissions']]
                 st.caption(", ".join(names[:10]) + ("..." if len(names) > 10 else ""))
-                col1, col2 = st.columns(2)
-                with col1:
+                c1, c2 = st.columns(2)
+                with c1:
                     if st.button(f"Grade all in {data['title']}", key=f"grade_{data['assignment_id']}"):
                         for sub in data['submissions']:
-                            _grade_submission(db, data['class_id'], data['assignment_id'],
-                                            sub['student_id'], sub['submission_text'])
+                            _grade_submission(db, data['class_id'], data['assignment_id'], sub['student_id'], sub['submission_text'])
                             db.mark_submission_graded(sub['id'])
                         st.rerun()
-                with col2:
+                with c2:
                     if st.button(f"Clear queue", key=f"clear_{data['assignment_id']}"):
                         for sub in data['submissions']:
                             db.mark_submission_graded(sub['id'])
                         st.rerun()
-            st.markdown("---")
-    else:
-        # Show smaller pending indicator if any exist for current assignment
-        pass
-
-    st.markdown("<div class='main-title'>MY-Mark Dashboard</div>", unsafe_allow_html=True)
-    st.markdown("<p class='subheader-text'>Select an assignment and student to grade work, review past feedback, and produce PDF reports.</p>", unsafe_allow_html=True)
-
-    left, right = st.columns([2, 1])
-    with left:
-        st.markdown("<div class='section-card'>", unsafe_allow_html=True)
-        st.subheader("Selected Class & Assignment")
-        st.markdown(f"**Class:** {selected_class.name}")
-        if assignment_id:
-            selected_assignment = db.get_assignment(assignment_id)
-            st.markdown(f"**Assignment:** {selected_assignment.title}")
-            st.markdown(f"**Prompt:** {selected_assignment.context[:180]}...")
-        else:
-            st.info("Please select an assignment from the sidebar.")
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        if assignment_id and not student_id:
-            st.warning("Select a student from the sidebar to proceed.")
-
-        if assignment_id and student_id:
-            selected_student = db.get_student(student_id)
-            st.markdown("<div class='section-card'>", unsafe_allow_html=True)
-            st.subheader("Selected Student")
-            st.markdown(f"**Name:** {selected_student.name}")
-            st.markdown(f"**Class:** {selected_class.name}")
-            st.markdown(f"**Assignment:** {selected_assignment_title}")
-            st.markdown("</div>", unsafe_allow_html=True)
-
-    with right:
-        st.markdown("<div class='small-card'>", unsafe_allow_html=True)
-        st.subheader("Quick Actions")
-        st.markdown("- Upload & grade now\n- Upload for batch grading\n- Create class competency report")
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        st.markdown("<div class='small-card'>", unsafe_allow_html=True)
-        st.subheader("Status")
-        st.markdown(f"**Students:** {len(students)}")
-        st.markdown(f"**Assignments:** {len(assignments)}")
-        if assignment_id:
-            pending_count = db.get_pending_count(assignment_id)
-            if pending_count:
-                st.markdown(f"**📋 Pending grading:** {pending_count}")
-        if student_id and assignment_id:
-            history = db.get_feedback_history(student_id, assignment_id)
-            st.markdown(f"**Drafts saved:** {len(history)}")
-        st.markdown("</div>", unsafe_allow_html=True)
+            st.divider()
 
     if not assignment_id:
-        st.warning("Select an assignment before grading.")
+        st.info("Select or create an assignment to begin grading.")
         return
-
-    # Show batch grading section for this assignment
-    render_batch_grading(db, class_id, assignment_id)
-
     if not student_id:
-        st.info("Select a student above to upload and grade individual work.")
+        st.info("Select a student above to upload and grade their work.")
         return
 
+    st.divider()
+    st.subheader(f"📤 Grading: {selected_class.name} — {selected_assignment_title} — {selected_student_name}")
     render_feedback_history(db, student_id, assignment_id)
     student_upload_area(db, class_id, assignment_id, student_id)
     render_class_report(db, class_id, assignment_id)
