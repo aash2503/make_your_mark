@@ -1111,6 +1111,8 @@ def main():
     total_pending = sum(len(v["submissions"]) for v in pending_all.values()) if pending_all else 0
     if total_pending:
         st.warning(f"📋 **{total_pending} submission(s) pending grading** — uploaded from mobile, ready for review.")
+    else:
+        st.caption("✅ No pending submissions — all graded.")
 
     classes = db.list_classes(teacher_id=teacher_id)
     if not classes:
