@@ -108,27 +108,21 @@ def inject_css() -> None:
         /* ── Neo-brutalist buttons ── */
         .stButton>button {{
             font-family: 'Century Gothic', CenturyGothic, AppleGothic, sans-serif !important;
-            font-weight: 900 !important;
-            letter-spacing: 0.08em !important;
+            font-weight: 700 !important;
+            letter-spacing: 0.04em !important;
             text-transform: uppercase;
             font-size: 0.85rem;
             line-height: 1.1;
-            border-radius: 16px;
+            border-radius: 14px;
             color: #ffffff;
-            background: linear-gradient(135deg, {_C['teal']}, {_C['amber']});
+            background: {_C['amber']};
             border: 2px solid {_C['amber']} !important;
             min-height: 48px;
-            box-shadow: 0 6px 0 rgba(245,158,11,0.3), 0 18px 32px rgba(245,158,11,0.18);
-            transition: transform 0.12s ease, box-shadow 0.12s ease;
+            box-shadow: none;
+            transition: opacity 0.12s ease;
         }}
-        .stButton>button:hover {{
-            transform: translateY(-2px);
-            box-shadow: 0 8px 0 rgba(245,158,11,0.4), 0 24px 42px rgba(245,158,11,0.28);
-        }}
-        .stButton>button:active {{
-            transform: translateY(2px);
-            box-shadow: 0 2px 0 rgba(245,158,11,0.2), 0 8px 18px rgba(245,158,11,0.12);
-        }}
+        .stButton>button:hover {{ opacity: 0.88; }}
+        .stButton>button:active {{ opacity: 0.75; }}
 
         /* ── Inputs ── */
         .stTextInput>div>div>input,
@@ -197,8 +191,6 @@ def inject_css() -> None:
             line-height: 1.05;
             text-transform: uppercase;
         }}
-        .login-wordmark .s {{ color: {_C['salmon']}; }}
-        .login-wordmark .t {{ color: {_C['teal']}; }}
 
         .login-sub {{
             font-size: 0.7rem;
@@ -332,9 +324,7 @@ def render_login(db: Database) -> None:
 
         # Wordmark
         st.markdown(
-            "<div class='login-wordmark'>"
-            "<span class='s'>MY</span><span class='t'>-Mark</span>"
-            "</div>"
+            "<div class='login-wordmark'>MY-Mark</div>"
             "<div class='login-sub'>"
             "Make Your Mark with MY-Mark &nbsp;—&nbsp; AI-Supported, Semi-Automated Marking"
             "</div>",
@@ -650,6 +640,7 @@ def _grade_submission(db: Database, class_id: int, assignment_id: int, student_i
                 assignment=assignment,
                 submission_text=submission_text,
                 history=previous_feedback,
+                subject=getattr(assignment, 'subject', 'english'),
             )
         except Exception as exc:
             st.error(f"Grading failed for {student.name}: {exc}")
@@ -831,89 +822,42 @@ def render_mobile(db: Database, teacher: dict, teacher_id: int):
         if students:
             st.write(pd.DataFrame([{"Name": s.name} for s in students], index=range(1, len(students)+1)))
 
-    # ── Section 3: Assignments ──
+    # ── Section 3: Assignments (create on desktop, mobile just selects) ──
     with st.expander("📝 Assignment", expanded=False):
-        if not students:
-            st.info("Add students first.")
-        new_title = st.text_input("Assignment title", key="mob_asm_title", placeholder="e.g. SA2 Paper 1")
-        new_context = st.text_area("Question / prompt", key="mob_asm_ctx", height=100,
-                                   placeholder="Paste the question paper text here...")
-        new_ak = st.text_area("Answer key / rubric", key="mob_asm_ak", height=100,
-                              placeholder="Paste rubric or check auto-generate below")
-        auto_ak = st.checkbox("Auto-generate answer key", key="mob_auto_ak")
-
-        if st.button("Create Assignment", key="mob_add_asm") and new_title and new_context:
-            ak_text = new_ak.strip()
-            ak_src = "manual"
-            if auto_ak and not ak_text:
-                with st.spinner("Gemini is writing the answer key..."):
-                    try:
-                        ak_text = get_gemini_client().generate_answer_key(new_context.strip())
-                        ak_src = "generated"
-                    except Exception as exc:
-                        st.error(f"Failed: {exc}")
-            if ak_text:
-                db.add_assignment(class_id, new_title, new_context.strip(), ak_text, answer_key_source=ak_src)
-                st.rerun()
-            else:
-                st.error("Provide an answer key or enable auto-generate.")
-
         assignments = db.list_assignments(class_id)
-        assignment_sel = None
-        assignment_id = None
-        if assignments:
-            assignment_sel = st.selectbox("Active assignment", [a.title for a in assignments], key="mob_asm_sel")
-            assignment_id = next(a.id for a in assignments if a.title == assignment_sel)
+        if not assignments:
+            st.info("Create an assignment on desktop first, then upload here.")
+            return
+        assignment_sel = st.selectbox("Active assignment", [a.title for a in assignments], key="mob_asm_sel")
+        assignment_id = next(a.id for a in assignments if a.title == assignment_sel)
+        assignment = db.get_assignment(assignment_id)
+        st.caption(f"Subject: {getattr(assignment, 'subject', 'english').title()}")
 
-    if not assignment_id:
-        st.info("Create an assignment above.")
-        return
-
-    # ── Section 4: Upload & Grade ──
-    student_sel = None
-    student_id = None
-    if students:
-        student_sel = st.selectbox("Student", [s.name for s in students], key="mob_stu_sel")
-        student_id = next(s.id for s in students if s.name == student_sel)
+    # ── Section 4: Upload ──
+    student_sel = st.selectbox("Student", [s.name for s in students], key="mob_stu_sel") if students else None
+    student_id = next(s.id for s in students if s.name == student_sel) if student_sel else None
 
     if not student_id:
         st.info("Select a student.")
         return
 
-    assignment = db.get_assignment(assignment_id)
-
     st.markdown("---")
-    st.caption(f"📝 {assignment.title}  |  👤 {student_sel}  |  📚 {selected_class.name}")
+    st.caption(f"📝 {assignment.title}  |  👤 {student_sel}")
 
-    # Camera + file upload
-    st.caption("Upload student's work:")
-    cam_col, file_col = st.columns(2)
-    with cam_col:
-        camera_photo = st.camera_input("Take photo", key=f"cam_{student_id}")
-    with file_col:
-        uploaded_files = st.file_uploader(
-            "Upload file(s)", type=["png","jpg","jpeg","pdf","txt"],
-            accept_multiple_files=True, key=f"mob_files_{student_id}"
-        )
+    camera_photo = st.camera_input("Take photo", key=f"cam_{student_id}")
+    uploaded_files = st.file_uploader("Upload file(s)", type=["png","jpg","jpeg","pdf","txt"],
+                                       accept_multiple_files=True, key=f"mob_files_{student_id}")
+    raw_text = st.text_area("OR paste text", key=f"mob_text_{student_id}", height=100)
 
-    raw_text = st.text_area("OR paste text", key=f"mob_text_{student_id}", height=120)
-
-    # Grading mode
-    mode = st.radio("Mode", ["Grade now", "Save for batch"], horizontal=True, key=f"mob_mode_{student_id}")
-
-    if st.button("Submit", key=f"mob_submit_{student_id}", type="primary", use_container_width=True):
-        # Collect text from all sources
+    if st.button("Submit for Grading", key=f"mob_submit_{student_id}", type="primary", use_container_width=True):
         submission_text = raw_text.strip()
         if camera_photo and not submission_text:
             camera_photo.seek(0)
-            img_bytes = camera_photo.read()
             try:
-                submission_text = get_gemini_client().extract_text_from_image(img_bytes, "image/jpeg")
-                st.caption("📷 Text extracted via Gemini Vision")
+                submission_text = get_gemini_client().extract_text_from_image(camera_photo.read(), "image/jpeg")
             except Exception:
-                st.error("Could not read photo. Try uploading instead.")
+                st.error("Could not read photo.")
                 return
-
         if uploaded_files and not submission_text:
             parts = []
             for i, f in enumerate(uploaded_files):
@@ -921,28 +865,17 @@ def render_mobile(db: Database, teacher: dict, teacher_id: int):
                 if txt:
                     parts.append(f"[Page {i+1}]\n{txt}")
             submission_text = "\n\n---\n\n".join(parts)
-
         if not submission_text:
-            st.error("No text found. Take a photo, upload, or paste text.")
+            st.error("No text found.")
             return
+        db.add_submission(student_id, assignment_id, submission_text)
+        st.success(f"✓ Uploaded! Grade on desktop. {db.get_pending_count(assignment_id)} pending.")
+        st.rerun()
 
-        if mode == "Save for batch":
-            db.add_submission(student_id, assignment_id, submission_text)
-            st.success(f"✓ Queued. {db.get_pending_count(assignment_id)} pending.")
-            st.rerun()
-        else:
-            _grade_submission(db, class_id, assignment_id, student_id, submission_text)
-
-    # ── Section 5: Batch grading ──
-    render_batch_grading(db, class_id, assignment_id)
-
-    # ── Section 6: Review ──
-    if student_id:
-        with st.expander("📋 Feedback History", expanded=False):
-            render_feedback_history(db, student_id, assignment_id)
-
-    with st.expander("📊 Class Report", expanded=False):
-        render_class_report(db, class_id, assignment_id)
+    # ── Section 5: Pending status ──
+    pending = db.get_pending_count(assignment_id)
+    if pending:
+        st.info(f"📋 {pending} submission(s) pending grading on desktop.")
 
     # ── Footer ──
     st.markdown("---")
@@ -1095,6 +1028,7 @@ def main():
     with st.sidebar.expander("Manage Assignments", expanded=True):
         st.caption("Create a new assignment")
         new_assignment_title = st.text_input("Title", key="new_assignment_title", placeholder="e.g. SA2 Continuous Writing")
+        new_subject = st.selectbox("Subject", ["english", "mathematics", "science"], key="new_subject")
 
         # Question paper: text + optional file
         qp_file = st.file_uploader("Upload question paper (PDF/image)", type=["png","jpg","jpeg","pdf"],
@@ -1150,7 +1084,8 @@ def main():
 
                 if answer_key_text:
                     db.add_assignment(class_id, new_assignment_title, context_text,
-                                    answer_key_text, answer_key_source=answer_key_source)
+                                    answer_key_text, answer_key_source=answer_key_source,
+                                    subject=new_subject)
                     st.rerun()
                 else:
                     st.error("Please provide an answer key or enable auto-generate.")
@@ -1159,8 +1094,13 @@ def main():
 
         assignments = db.list_assignments(class_id)
         if assignments:
-            st.caption(f"{len(assignments)} assignment(s)")
-            st.write(pd.DataFrame([{"ID": a.id, "Title": a.title} for a in assignments]))
+            st.caption(f"{len(assignments)} assignment(s) — showing 3 most recent")
+            st.write(pd.DataFrame([{"ID": a.id, "Title": a.title, "Subject": getattr(a,'subject','')} for a in assignments]))
+            # Archive button for current assignment
+            if assignment_id:
+                if st.button("📦 Archive this assignment", key="archive_asm"):
+                    db.archive_assignment(assignment_id)
+                    st.rerun()
 
     assignment_options = {a.title: a.id for a in assignments}
     selected_assignment_title = st.sidebar.selectbox("Select Assignment", ["Choose an assignment"] + list(assignment_options.keys()), key="selected_assignment")

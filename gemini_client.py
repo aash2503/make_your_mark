@@ -6,25 +6,47 @@ import google.generativeai as genai
 
 from database import Assignment, Feedback
 
-SYSTEM_INSTRUCTION = (
-    "SYSTEM PERSONA: PSLE ENGLISH TEACHER'S ASSISTANT (TA).\n"
-    "Role: You are an expert TA specializing in the Singapore MOE PSLE English syllabus.\n"
-    "Objective: Grade student responses with absolute precision, provide structured pedagogical feedback, "
-    "track development, and adhere strictly to SEAB marking rubrics. Do NOT give sympathy marks.\n\n"
-    "Marking Rubrics to Enforce:\n"
-    "- AO1, AO2, AO3 applies.\n"
-    "- Paper 1 (Situational Writing 15m): Task fulfillment requires all 6 bullet points. "
-    "Missing one = direct penalty. Accuracy, tone, and context are paramount.\n"
-    "- Paper 1 (Continuous Writing 40m): Must use at least one picture. Logical plot, climax, resolution. "
-    "Varied sentences, SVA, past tense consistency, 'show, don't tell' techniques.\n"
-    "- Paper 2 (Grammar/Vocab/Cloze): Exact matches required.\n"
-    "- Paper 2 (Synthesis & Transformation 10m): CRITICAL STRICTNESS. Meaning completely preserved or 0 marks. "
-    "Any grammar/tense error = 0 marks. Missing commas/spelling = -0.5 mark.\n"
-    "- Paper 2 (Comprehension OE): Direct retrieval rules, vocab in context, "
-    "true/false+reason (both must be correct for marks).\n\n"
-    "Respond in raw LaTeX only, using xcolor and tcolorbox. "
-    "Do not provide explanation outside the LaTeX document."
-)
+def _subject_prompt(subject: str) -> str:
+    """Return a system prompt tailored to the subject."""
+    base = (
+        f"SYSTEM PERSONA: {subject.upper()} PRIMARY SCHOOL TEACHER'S ASSISTANT (TA).\n"
+        f"Objective: Grade student responses with precision, provide structured pedagogical feedback, "
+        f"and adhere strictly to MOE primary-level marking rubrics. Do NOT give sympathy marks.\n\n"
+    )
+    if subject.lower() == "english":
+        return base + (
+            "Marking Rubrics to Enforce:\n"
+            "- AO1, AO2, AO3 applies.\n"
+            "- Paper 1 (Situational Writing 15m): Task fulfillment requires all 6 bullet points. Missing one = direct penalty.\n"
+            "- Paper 1 (Continuous Writing 40m): Must use at least one picture. Logical plot, climax, resolution.\n"
+            "- Paper 2 (Grammar/Vocab/Cloze): Exact matches required.\n"
+            "- Paper 2 (Synthesis & Transformation 10m): Meaning completely preserved or 0 marks.\n"
+            "- Paper 2 (Comprehension OE): Direct retrieval rules, vocab in context.\n"
+        )
+    elif subject.lower() == "math" or subject.lower() == "mathematics":
+        return base + (
+            "Marking Rubrics to Enforce:\n"
+            "- Method marks (M): Awarded for correct approach even if final answer is wrong.\n"
+            "- Accuracy marks (A): Awarded for correct final answer.\n"
+            "- Working must be shown for multi-step problems.\n"
+            "- Units must be included where applicable (e.g. cm, kg, $).\n"
+            "- Number statements and final answer statements required for word problems.\n"
+            "- Common errors: misalignment in column addition, borrowing errors, multiplication table mistakes.\n"
+        )
+    elif subject.lower() == "science":
+        return base + (
+            "Marking Rubrics to Enforce:\n"
+            "- Knowledge marks (K): Correct scientific facts, terminology, and concepts.\n"
+            "- Application marks (A): Applying concepts to new scenarios.\n"
+            "- Experimental design: Identifying variables (changed, measured, controlled).\n"
+            "- Observation skills: Accurate recording of results, use of scientific vocabulary.\n"
+            "- Common errors: Confusing similar concepts, incomplete explanations, missing scientific keywords.\n"
+        )
+    else:
+        return base + (
+            "Mark the student's work according to the provided rubric and answer key.\n"
+            "Provide structured feedback with Glows (strengths), Grows (improvements), and Action Items.\n"
+        ) + "Respond in raw LaTeX only, using xcolor and tcolorbox. Do not provide explanation outside the LaTeX document."
 
 # Default ranked model list — first choice is tried first, then fallback
 DEFAULT_MODEL_RANK = [
@@ -63,21 +85,22 @@ class GeminiClient:
         self._cooldown_seconds = 60        # how long to skip a rate-limited model
         self.last_model_used: Optional[str] = None
 
-    def _get_model(self, model_name: str):
-        """Get or create a cached GenerativeModel instance."""
-        if model_name not in self._model_cache:
-            self._model_cache[model_name] = genai.GenerativeModel(
+    def _get_model(self, model_name: str, subject: str = "english"):
+        """Get or create a cached GenerativeModel instance for a subject."""
+        cache_key = f"{model_name}:{subject}"
+        if cache_key not in self._model_cache:
+            self._model_cache[cache_key] = genai.GenerativeModel(
                 model_name=model_name,
-                system_instruction=SYSTEM_INSTRUCTION,
+                system_instruction=_subject_prompt(subject),
                 generation_config=genai.GenerationConfig(
                     temperature=0.0,
                     top_p=0.8,
                     max_output_tokens=4096,
                 ),
             )
-        return self._model_cache[model_name]
+        return self._model_cache[cache_key]
 
-    def _call(self, prompt: str) -> tuple[str, str]:
+    def _call(self, prompt: str, subject: str = "english") -> tuple[str, str]:
         """Call Gemini with ranked fallback. Returns (response_text, model_used)."""
         last_error = None
 
@@ -89,7 +112,7 @@ class GeminiClient:
                 del self._cooldown[model_name]
 
             try:
-                model = self._get_model(model_name)
+                model = self._get_model(model_name, subject)
                 response = model.generate_content(prompt)
                 self.last_model_used = model_name
                 return response.text.strip(), model_name
@@ -122,7 +145,7 @@ class GeminiClient:
                     continue
                 del self._cooldown[model_name]
             try:
-                model = self._get_model(model_name)
+                model = self._get_model(model_name, "english")
                 response = model.generate_content([
                     {"mime_type": mime_type, "data": image_bytes},
                     prompt,
@@ -143,6 +166,7 @@ class GeminiClient:
         assignment: Assignment,
         submission_text: str,
         history: str,
+        subject: str = "english",
     ) -> str:
         prompt = (
             f"Assignment Title: {assignment.title}\n"
@@ -156,7 +180,7 @@ class GeminiClient:
             "Glows, Grows, and Action Items. "
             "Use xcolor and tcolorbox for styling. Return only raw LaTeX code."
         )
-        result, _ = self._call(prompt)
+        result, _ = self._call(prompt, subject)
         return result
 
     def generate_answer_key(self, question_paper: str, subject: str = "English") -> str:
@@ -173,7 +197,7 @@ class GeminiClient:
             "- Grade boundaries if applicable\n\n"
             "Return the answer key as clear structured text, not LaTeX."
         )
-        result, _ = self._call(prompt)
+        result, _ = self._call(prompt, subject)
         return result
 
     def generate_class_report(
@@ -181,6 +205,7 @@ class GeminiClient:
         class_name: str,
         assignment: Assignment,
         feedback_rows: List[Feedback],
+        subject: str = "english",
     ) -> str:
         history_block = []
         for feedback in feedback_rows:
@@ -201,5 +226,5 @@ class GeminiClient:
             "Best Techniques Observed, Class-Wide Trends, and a Progression Table comparing Draft 1 vs Draft 2. "
             "Return only LaTeX code and do not include plain text explanation outside LaTeX."
         )
-        result, _ = self._call(prompt)
+        result, _ = self._call(prompt, subject)
         return result

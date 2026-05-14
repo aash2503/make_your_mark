@@ -35,6 +35,8 @@ class Assignment:
     context: str
     answer_key: str
     created_at: str
+    subject: str = "english"
+    archived: bool = False
     answer_key_source: str = "manual"
     context_files: str = "[]"
     answer_key_files: str = "[]"
@@ -221,7 +223,7 @@ class Database:
     # ── Assignment methods ────────────────────────────────────────────────────
 
     def add_assignment(self, class_id: int, title: str, context: str, answer_key: str,
-                        answer_key_source: str = "manual") -> int:
+                        answer_key_source: str = "manual", subject: str = "english") -> int:
         try:
             result = self.client.table("assignments").insert({
                 "class_id": class_id,
@@ -229,6 +231,7 @@ class Database:
                 "context": context.strip(),
                 "answer_key": answer_key.strip(),
                 "answer_key_source": answer_key_source,
+                "subject": subject,
                 "created_at": self._now(),
             }).execute()
         except Exception:
@@ -242,9 +245,12 @@ class Database:
             }).execute()
         return result.data[0]["id"]
 
-    def list_assignments(self, class_id: int) -> List[Assignment]:
-        result = self.client.table("assignments").select("id,class_id,title,context,answer_key,created_at") \
-            .eq("class_id", class_id).order("created_at", desc=True).execute()
+    def list_assignments(self, class_id: int, include_archived: bool = False) -> List[Assignment]:
+        cols = "id,class_id,title,context,answer_key,created_at"
+        query = self.client.table("assignments").select(cols).eq("class_id", class_id)
+        if not include_archived:
+            query = query.eq("archived", False)
+        result = query.order("created_at", desc=True).limit(3).execute()
         return [Assignment(**self._row_to_dict(r)) for r in (result.data or [])]
 
     def get_assignment(self, assignment_id: int) -> Assignment:
@@ -253,6 +259,13 @@ class Database:
         if not result.data:
             raise ValueError(f"Assignment {assignment_id} not found.")
         return Assignment(**self._row_to_dict(result.data[0]))
+
+    def archive_assignment(self, assignment_id: int):
+        self.client.table("assignments").update({
+            "archived": True,
+            "context": "[archived]",
+            "answer_key": "[archived]",
+        }).eq("id", assignment_id).execute()
 
     # ── Feedback methods ──────────────────────────────────────────────────────
 

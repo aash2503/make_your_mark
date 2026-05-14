@@ -40,6 +40,8 @@ CREATE TABLE IF NOT EXISTS assignments (
     title TEXT NOT NULL,
     context TEXT NOT NULL,
     answer_key TEXT NOT NULL,
+    subject TEXT DEFAULT 'english',
+    archived BOOLEAN DEFAULT FALSE,
     answer_key_source TEXT DEFAULT 'manual',
     context_files TEXT DEFAULT '[]',
     answer_key_files TEXT DEFAULT '[]',
