@@ -616,7 +616,11 @@ def student_upload_area(db: Database, class_id: int, assignment_id: int, student
         return
 
     if mode == "Upload for batch grading later":
-        db.add_submission(student_id, assignment_id, submission_text, file_paths)
+        try:
+            db.add_submission(student_id, assignment_id, submission_text, file_paths)
+        except RuntimeError as exc:
+            st.error(str(exc))
+            return
         st.success(f"✓ Submission queued for batch grading. {db.get_pending_count(assignment_id)} pending total.")
         return
 
@@ -868,7 +872,11 @@ def render_mobile(db: Database, teacher: dict, teacher_id: int):
         if not submission_text:
             st.error("No text found.")
             return
-        db.add_submission(student_id, assignment_id, submission_text)
+        try:
+            db.add_submission(student_id, assignment_id, submission_text)
+        except RuntimeError as exc:
+            st.error(str(exc))
+            return
         st.success(f"✓ Uploaded! Grade on desktop. {db.get_pending_count(assignment_id)} pending.")
         st.rerun()
 

@@ -317,8 +317,21 @@ class Database:
 
     # ── Submission methods (batch grading queue) ───────────────────────────────
 
+    def _submission_table_ready(self) -> bool:
+        """Check if the submissions table exists."""
+        try:
+            self.client.table("submissions").select("id", count="exact").limit(0).execute()
+            return True
+        except Exception:
+            return False
+
     def add_submission(self, student_id: int, assignment_id: int, text: str,
                        file_paths: list = None) -> int:
+        if not self._submission_table_ready():
+            raise RuntimeError(
+                "Submissions table not found. Run the CREATE TABLE statement "
+                "from supabase_schema.sql in the Supabase SQL Editor."
+            )
         result = self.client.table("submissions").insert({
             "student_id": student_id,
             "assignment_id": assignment_id,
@@ -330,6 +343,8 @@ class Database:
         return result.data[0]["id"]
 
     def list_pending_submissions(self, assignment_id: int) -> List[Submission]:
+        if not self._submission_table_ready():
+            return []
         result = self.client.table("submissions").select("*, students!inner(name)") \
             .eq("assignment_id", assignment_id) \
             .eq("status", "pending") \
@@ -345,9 +360,13 @@ class Database:
         return subs
 
     def mark_submission_graded(self, submission_id: int):
+        if not self._submission_table_ready():
+            return
         self.client.table("submissions").update({"status": "graded"}).eq("id", submission_id).execute()
 
     def get_pending_count(self, assignment_id: int) -> int:
+        if not self._submission_table_ready():
+            return 0
         result = self.client.table("submissions").select("id", count="exact") \
             .eq("assignment_id", assignment_id).eq("status", "pending").execute()
         return result.count or 0
