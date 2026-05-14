@@ -1117,7 +1117,16 @@ def main():
     pending_all = db.list_all_pending(teacher_id)
     total_pending = sum(len(v["submissions"]) for v in pending_all.values()) if pending_all else 0
     if total_pending:
-        st.warning(f"📋 **{total_pending} submission(s) pending grading** — uploaded from mobile, ready for review.")
+        col_alert, col_btn = st.columns([3, 1])
+        with col_alert:
+            st.warning(f"📋 **{total_pending} submission(s) pending grading** — uploaded from mobile, ready for review.")
+        with col_btn:
+            if st.button("⚡ Grade All", key="grade_all_top", type="primary", use_container_width=True):
+                for key, data in pending_all.items():
+                    for sub in data['submissions']:
+                        _grade_submission(db, data['class_id'], data['assignment_id'], sub['student_id'], sub['submission_text'])
+                        db.mark_submission_graded(sub['id'])
+                st.rerun()
     else:
         st.caption("✅ No pending submissions — all graded.")
 
