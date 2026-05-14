@@ -709,6 +709,14 @@ def _grade_submission(db: Database, class_id: int, assignment_id: int, student_i
     st.subheader(f"Feedback — {student.name}")
     st.code(latex_result, language="latex")
 
+    # Store in session so it persists across reruns
+    st.session_state.setdefault("grade_results", {})
+    st.session_state.grade_results[f"{student_id}_{assignment_id}"] = {
+        "student_name": student.name,
+        "latex": latex_result,
+        "tex_file": str(tex_file),
+    }
+
     tex_file = OUTPUT_DIR / f"feedback_{student_id}_{assignment_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}.tex"
     try:
         write_tex_file(tex_file, latex_result)
@@ -1125,6 +1133,61 @@ def _render_home(db: Database, teacher: dict, teacher_id: int, is_mobile: bool):
             st.session_state.is_mobile = False
             st.rerun()
 
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # Card 4: Past Reports
+        st.markdown("#### 📄 View Past Reports")
+        st.caption("Browse and download graded assignments, feedback PDFs, and class reports.")
+        if st.button("View Reports →", key="mode_reports", type="primary", use_container_width=True):
+            st.session_state.app_mode = "reports"
+            st.session_state.is_mobile = False
+            st.rerun()
+
+
+def render_reports(db: Database, teacher_id: int):
+    """Browse and download all past graded assignments."""
+    inject_css()
+    st.markdown("<div class='main-title'>📄 Past Reports</div>", unsafe_allow_html=True)
+    if st.button("🏠 Home", key="reports_home"):
+        st.session_state.app_mode = None
+        st.rerun()
+
+    classes = db.list_classes(teacher_id=teacher_id)
+    if not classes:
+        st.info("No classes yet.")
+        return
+
+    for cls in classes:
+        st.subheader(f"📚 {cls.name}")
+        assignments = db.list_assignments(cls.id, include_archived=True)
+        if not assignments:
+            st.caption("No assignments.")
+            continue
+        for asm in assignments:
+            feedback_rows = db.get_feedback_for_class_assignment(cls.id, asm.id)
+            if not feedback_rows:
+                continue
+            seen = {}
+            for f in feedback_rows:
+                sid = f.student_id
+                if sid not in seen or f.draft_number > seen[sid].draft_number:
+                    seen[sid] = f
+            if seen:
+                with st.expander(f"{asm.title} — {len(seen)} student(s) · {getattr(asm,'subject','english').title()}"):
+                    for sid, fb in seen.items():
+                        sname = fb.student_name or f"Student {sid}"
+                        c1, c2 = st.columns([3, 1])
+                        with c1:
+                            st.caption(f"📎 {sname} — Draft {fb.draft_number}")
+                        with c2:
+                            path = fb.feedback_pdf_path
+                            if path:
+                                if str(path).startswith("http"):
+                                    st.markdown(f"[Open PDF]({path})", unsafe_allow_html=True)
+                                elif Path(path).exists():
+                                    with open(path, "rb") as pf:
+                                        st.download_button("Download", pf, file_name=f"{sname}_{asm.title}.pdf", key=f"rpt_{fb.id}", mime="application/pdf")
+
 
 def main():
     db = get_database()
@@ -1177,6 +1240,9 @@ def main():
         return
 
     # ── Grade mode or Configure mode: desktop dashboard ──
+    if st.session_state.get("app_mode") == "reports":
+        render_reports(db, teacher_id)
+        return
 
     # ── Sidebar + main area sidebar-toggle ──
     avatar = teacher.get("avatar", "🧑‍🏫") if isinstance(teacher, dict) else "🧑‍🏫"
