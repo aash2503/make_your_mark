@@ -51,11 +51,11 @@ def _subject_prompt(subject: str) -> str:
         )
 
 # Default ranked model list — first choice is tried first, then fallback
+# Use only confirmed available models for generateContent
 DEFAULT_MODEL_RANK = [
-    "gemini-3.1-pro",
     "gemini-2.5-pro",
-    "gemini-3.1-flash-lite",
     "gemini-2.5-flash",
+    "gemini-2.0-flash",
 ]
 
 # Errors that should trigger a fallback (rate limiting, overloaded, etc.)
