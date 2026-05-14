@@ -1324,6 +1324,35 @@ def main():
     if not assignment_id:
         st.info("Select or create an assignment to begin grading.")
         return
+
+    # ── Graded student downloads ──
+    if assignment_id and students:
+        # Get graded feedback for this assignment
+        graded = db.get_feedback_for_class_assignment(class_id, assignment_id)
+        # Deduplicate by student — show latest draft
+        seen = {}
+        for f in graded:
+            sid = f.student_id
+            if sid not in seen or f.draft_number > seen[sid].draft_number:
+                seen[sid] = f
+        if seen:
+            with st.expander(f"📄 Graded Feedback — {len(seen)} student(s)", expanded=False):
+                for sid, fb in seen.items():
+                    sname = fb.student_name or f"Student {sid}"
+                    col_name, col_btn = st.columns([3, 1])
+                    with col_name:
+                        st.caption(f"📎 {sname} — Draft {fb.draft_number}")
+                    with col_btn:
+                        if fb.feedback_pdf_path:
+                            # If it's a cloud URL, link to it; if local, create download
+                            path = fb.feedback_pdf_path
+                            if str(path).startswith("http"):
+                                st.markdown(f"[Open PDF]({path})", unsafe_allow_html=True)
+                            elif Path(path).exists():
+                                with open(path, "rb") as pf:
+                                    st.download_button("Download", pf, file_name=f"{sname}_{selected_assignment_title}.pdf",
+                                                       key=f"dl_{fb.id}", mime="application/pdf")
+
     if not student_id:
         st.info("Select a student above to upload and grade their work.")
         return
