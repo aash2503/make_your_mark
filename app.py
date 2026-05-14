@@ -1323,21 +1323,60 @@ def main():
                 st.rerun()
         st.divider()
 
+    # ── PENDING GRADING — always first, before anything else ──
     pending_all = db.list_all_pending(teacher_id)
     total_pending = sum(len(v["submissions"]) for v in pending_all.values()) if pending_all else 0
+
+    # If cross-class query failed, try per-class
+    if not pending_all:
+        classes_temp = db.list_classes(teacher_id=teacher_id)
+        for cls in classes_temp:
+            asms = db.list_assignments(cls.id, include_archived=False)
+            for a in asms:
+                subs = db.list_pending_submissions(a.id)
+                if subs:
+                    key = f"{cls.id}:{a.id}:{a.title}"
+                    pending_all[key] = {
+                        "class_id": cls.id, "assignment_id": a.id,
+                        "title": a.title,
+                        "submissions": [{
+                            "id": s.id, "student_id": s.student_id,
+                            "student_name": getattr(s, 'student_name', f"Student {s.student_id}"),
+                            "submission_text": s.submission_text,
+                        } for s in subs]
+                    }
+        total_pending = sum(len(v["submissions"]) for v in pending_all.values()) if pending_all else 0
+
     if total_pending:
-        col_alert, col_btn = st.columns([3, 1])
-        with col_alert:
-            st.warning(f"📋 **{total_pending} submission(s) pending grading** — uploaded from mobile, ready for review.")
-        with col_btn:
-            if st.button("⚡ Grade All", key="grade_all_top", type="primary", use_container_width=True):
-                for key, data in pending_all.items():
-                    for sub in data['submissions']:
-                        _grade_submission(db, data['class_id'], data['assignment_id'], sub['student_id'], sub['submission_text'])
-                        db.mark_submission_graded(sub['id'])
-                st.rerun()
+        st.warning(f"📋 **{total_pending} submission(s) pending grading** — uploaded from mobile, ready for review.")
     else:
         st.caption("✅ No pending submissions — all graded.")
+
+    # Show per-student submissions immediately
+    if pending_all:
+        st.subheader(f"📋 Pending Submissions")
+        if st.button("⚡ Grade ALL", key="grade_all_top", type="primary"):
+            for key, data in pending_all.items():
+                for sub in data['submissions']:
+                    _grade_submission(db, data['class_id'], data['assignment_id'], sub['student_id'], sub['submission_text'])
+                    db.mark_submission_graded(sub['id'])
+            st.rerun()
+
+        for key, data in pending_all.items():
+            st.markdown(f"**{data['title']}** — {len(data['submissions'])} pending")
+            for sub in data['submissions']:
+                sname = sub.get("student_name", f"Student {sub['student_id']}")
+                text_len = len(sub.get('submission_text', ''))
+                c1, c2 = st.columns([4, 1])
+                with c1:
+                    st.caption(f"👤 {sname} — {text_len} chars")
+                with c2:
+                    if st.button("Grade", key=f"gsub_{sub['id']}"):
+                        _grade_submission(db, data['class_id'], data['assignment_id'], sub['student_id'], sub['submission_text'])
+                        db.mark_submission_graded(sub['id'])
+                        st.rerun()
+            st.markdown("---")
+        st.divider()
 
     classes = db.list_classes(teacher_id=teacher_id)
     if not classes:
@@ -1413,49 +1452,6 @@ def main():
             with st.popover("➕ New Assignment"):
                 _render_assignment_form(db, class_id)
                 st.rerun()
-
-    # ── Pending grading — always visible ──
-    if pending_all:
-        st.divider()
-        st.subheader(f"📋 Pending Grading — {total_pending} submission(s)")
-        if st.button("⚡ Grade ALL pending submissions", key="grade_all_top_main", type="primary"):
-            for key, data in pending_all.items():
-                for sub in data['submissions']:
-                    _grade_submission(db, data['class_id'], data['assignment_id'], sub['student_id'], sub['submission_text'])
-                    db.mark_submission_graded(sub['id'])
-            st.rerun()
-
-        for key, data in pending_all.items():
-            st.markdown(f"**{data['title']}** — {len(data['submissions'])} pending")
-            for sub in data['submissions']:
-                sname = sub.get("student_name", f"Student {sub['student_id']}")
-                text_len = len(sub.get('submission_text', ''))
-                c1, c2 = st.columns([4, 1])
-                with c1:
-                    st.caption(f"👤 {sname} — {text_len} chars")
-                with c2:
-                    if st.button("Grade", key=f"gsub_{sub['id']}"):
-                        _grade_submission(db, data['class_id'], data['assignment_id'], sub['student_id'], sub['submission_text'])
-                        db.mark_submission_graded(sub['id'])
-                        st.rerun()
-            st.markdown("---")
-    elif assignment_id:
-        # Show per-assignment pending even if cross-class query returned empty
-        pending_local = db.list_pending_submissions(assignment_id)
-        if pending_local:
-            st.divider()
-            st.subheader(f"📋 Pending for this assignment — {len(pending_local)} submission(s)")
-            for sub in pending_local:
-                sname = getattr(sub, 'student_name', f"Student {sub.student_id}")
-                c1, c2 = st.columns([4, 1])
-                with c1:
-                    st.caption(f"👤 {sname} — {len(sub.submission_text)} chars")
-                with c2:
-                    if st.button("Grade", key=f"lsub_{sub.id}"):
-                        _grade_submission(db, class_id, sub.assignment_id, sub.student_id, sub.submission_text)
-                        db.mark_submission_graded(sub.id)
-                        st.rerun()
-            st.markdown("---")
 
     if not assignment_id:
         st.info("Select or create an assignment to begin grading.")
