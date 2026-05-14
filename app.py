@@ -836,8 +836,8 @@ def render_mobile(db: Database, teacher: dict, teacher_id: int):
     selected_class = db.get_class(class_id)
 
     # ── Section 2: Select assignment ──
+    assignments = db.list_assignments(class_id)
     with st.expander("📝 Assignment", expanded=not bool(assignments)):
-        assignments = db.list_assignments(class_id)
         if not assignments:
             st.info("Create an assignment on desktop first.")
             return
