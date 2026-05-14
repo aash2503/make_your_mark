@@ -958,26 +958,6 @@ def render_mobile(db: Database, teacher: dict, teacher_id: int):
         st.rerun()
 
 
-def _detect_mobile() -> bool:
-    """Detect mobile: ONLY if explicitly toggled via button. Default = desktop."""
-    if "is_mobile" in st.session_state:
-        return st.session_state.is_mobile
-    return False
-
-
-def _render_mobile_toggle():
-    """Show toggle — stored purely in session (no URL params)."""
-    is_mobile = st.session_state.get("is_mobile", False)
-    if is_mobile:
-        if st.button("🖥 Desktop View", key="layout_toggle"):
-            st.session_state.is_mobile = False
-            st.rerun()
-    else:
-        if st.button("📱 Mobile View", key="layout_toggle"):
-            st.session_state.is_mobile = True
-            st.rerun()
-
-
 def main():
     db = get_database()
 
@@ -1015,17 +995,14 @@ def main():
     teacher = st.session_state.get("teacher", {})
     teacher_id = teacher.get("id") if isinstance(teacher, dict) else None
 
-    # ── Mobile toggle (always visible) ──
-    _render_mobile_toggle()
-
-    # ── Mobile detection ──
-    is_mobile = _detect_mobile()
+    # ── Mobile toggle ──
+    is_mobile = st.session_state.get("is_mobile", False)
 
     if is_mobile:
         render_mobile(db, teacher, teacher_id)
         return
 
-    # ── Desktop layout below ──
+    # ── Desktop layout below (sidebar always visible) ──
     avatar = teacher.get("avatar", "🧑‍🏫") if isinstance(teacher, dict) else "🧑‍🏫"
     name = teacher.get("display_name", "Teacher") if isinstance(teacher, dict) else "Teacher"
 
@@ -1054,6 +1031,12 @@ def main():
 
     st.sidebar.title("MY-Mark")
     st.sidebar.markdown("## Classes & Assignments")
+
+    # Mobile toggle in sidebar footer
+    with st.sidebar:
+        if st.button("📱 Switch to Mobile View", key="layout_toggle"):
+            st.session_state.is_mobile = True
+            st.rerun()
 
     classes = db.list_classes(teacher_id=teacher_id)
 
