@@ -1064,6 +1064,11 @@ def main():
     is_mobile = st.session_state.get("is_mobile", False)
 
     if is_mobile:
+        # Show banner to return to desktop
+        st.warning("You're in mobile view. [Switch to Desktop]()", icon="📱")
+        if st.button("🖥 Return to Desktop View", key="force_desktop"):
+            st.session_state.is_mobile = False
+            st.rerun()
         render_mobile(db, teacher, teacher_id)
         return
 
