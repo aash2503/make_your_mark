@@ -1068,6 +1068,8 @@ def main():
         return
 
     # ── Sidebar: minimal — just identity + sign out ──
+    avatar = teacher.get("avatar", "🧑‍🏫") if isinstance(teacher, dict) else "🧑‍🏫"
+    name = teacher.get("display_name", "Teacher") if isinstance(teacher, dict) else "Teacher"
     with st.sidebar:
         st.markdown(f"### {avatar} {name}")
         if st.button("Sign Out", key="signout"):
