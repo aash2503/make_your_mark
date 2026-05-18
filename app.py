@@ -43,6 +43,7 @@ def inject_css() -> None:
 
         html, body, [class*="css"] {{
             font-family: 'Century Gothic', CenturyGothic, AppleGothic, sans-serif !important;
+            font-size: 105%;
             background-color: {_C['bg']} !important;
             color: {_C['text']} !important;
         }}
